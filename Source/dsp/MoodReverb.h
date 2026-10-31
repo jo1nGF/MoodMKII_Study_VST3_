@@ -55,7 +55,7 @@ public:
         for (auto& s : side) { s.ap1.clear(); s.ap2.clear(); s.d1.clear(); s.d2.clear(); s.damp.reset(); s.dc.reset(); s.fb = 0.f; }
     }
 
-    void process (float in, float& outL, float& outR, const Params& p, float fc)
+    void process (float in, float& outL, float& outR, const Params& p, float /*fc*/)
     {
         float x = inBw.lp (in, 0.9f);
         const float g1 = 0.75f * p.smear, g2 = 0.625f * p.smear;
@@ -68,7 +68,7 @@ public:
         const float dg1 = 0.7f * p.smear;
         const float dg2 = clampf (p.decay + 0.15f, 0.25f, 0.5f) * p.smear;
 
-        lfo += 0.9f / fc;
+        lfo += 0.9f / 32000.f;   // LFO proporcional ao clock (como um programa fixo): o desvio de pitch fica igual em todos os clocks
         if (lfo >= 1.f) lfo -= 1.f;
         const float mod[2] = { std::sin (kTwoPi * lfo) * 8.f * p.modDepth, std::cos (kTwoPi * lfo) * 8.f * p.modDepth };
         const float inS[2] = { x + side[1].fb, x + side[0].fb };

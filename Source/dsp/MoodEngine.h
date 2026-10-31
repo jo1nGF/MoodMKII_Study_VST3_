@@ -67,6 +67,9 @@ public:
         duck = 1.f; duckState = 0;
         prevAnyOn = false;
         ramper = Ramper{};
+        for (auto& f : aaIn) f.reset();
+        for (auto& f : aaOut) f.reset();
+        aaMix = 0.f;
     }
 
     // Pode ser chamado "in-place" (in == out).
@@ -165,9 +168,20 @@ public:
 
             routingNow = p.routing; directLoop = p.directLoop; gWet = gW * duck; gLoop = gL * duck;
 
-            // ---- ticks do motor (taxa = clock). Entrada amostrada SEM anti-aliasing => aliasing "computer noises" ----
-            hl[3] = hl[2]; hl[2] = hl[1]; hl[1] = hl[0]; hl[0] = dryL;
-            hr[3] = hr[2]; hr[2] = hr[1]; hr[1] = hr[0]; hr[0] = dryR;
+            // ---- DEGRADE: anti-alias de entrada + reconstrução de saída (passa-baixas 4ª ordem em kk * clock) ----
+            // 0 = limpo (corte em 0,4 x clock) ... 1 = bruto, sem filtro (aliasing "computer noises" do pedal).
+            // O filtro só age quando clock < sample rate do host (é aí que há decimação / imagens do ZOH).
+            const float dg = clampf (p.degrade, 0.f, 1.f);
+            const float cutHz = 0.40f * std::exp2 (5.f * dg * dg) * fc;
+            const bool useAa = fc < fs && cutHz < 0.45f * fs;
+            aaMix += aGain * ((useAa ? 1.f : 0.f) - aaMix);
+            aaIn[0].setCutoff (cutHz, fs); aaIn[1].setCutoff (cutHz, fs);
+            const float fL = aaIn[0].process (dryL), fR = aaIn[1].process (dryR);
+            const float xinL = dryL + aaMix * (fL - dryL), xinR = dryR + aaMix * (fR - dryR);
+
+            // ---- ticks do motor (taxa = clock) ----
+            hl[3] = hl[2]; hl[2] = hl[1]; hl[1] = hl[0]; hl[0] = xinL;
+            hr[3] = hr[2]; hr[2] = hr[1]; hr[1] = hr[0]; hr[0] = xinR;
             const double inc = (double) fc / (double) fs;
             const double ph = tickPhase + inc;
             const int ntAll = (int) ph;
@@ -183,6 +197,11 @@ public:
             float yl, yr;
             if (fc < fs) { yl = ohl[0]; yr = ohr[0]; }
             else { const float t = (float) tickPhase; yl = hermite (ohl[3], ohl[2], ohl[1], ohl[0], t); yr = hermite (ohr[3], ohr[2], ohr[1], ohr[0], t); }
+
+            aaOut[0].setCutoff (cutHz, fs); aaOut[1].setCutoff (cutHz, fs);
+            const float oL = aaOut[0].process (yl), oR = aaOut[1].process (yr);
+            yl += aaMix * (oL - yl);
+            yr += aaMix * (oR - yr);
 
             if (p.classic)   // Classic: ruído que cresce conforme o CLOCK desce
             {
@@ -242,6 +261,8 @@ private:
     MicroLooper::Params lpar;
     Ramper ramper;
     Rng noiseRng;
+    LowPass4 aaIn[2], aaOut[2];
+    float aaMix = 0.f;
 
     double tickPhase = 0.0;
     float fc = 64000.f, fcLog = 15.97f;

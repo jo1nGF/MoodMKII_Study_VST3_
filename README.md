@@ -20,15 +20,17 @@ cmake --build build --config Release --target MoodMKIIStudy_VST3
 
 ### 1b. Compilar na nuvem, sem instalar nada (GitHub Actions)
 
-O projeto já traz `.github/workflows/build-windows.yml`. Passo a passo:
+O projeto traz `.github/workflows/build-windows.yml` (cópia solta: `build-windows.yml`). Ele aceita o código de **3 jeitos** (nesta ordem): arquivos soltos com `CMakeLists.txt` na raiz · **só o `.zip` do projeto na raiz do repositório (o workflow extrai sozinho)** · pasta do projeto dentro de uma subpasta.
 
-1. Crie um repositório no GitHub (**público** = minutos grátis e ilimitados; privado = cota mensal do seu plano, e minutos de Windows contam em dobro).
-2. Envie **todo o conteúdo desta pasta, inclusive a pasta oculta `.github/`** (com `git push`, GitHub Desktop, ou arrastando para *Add file ▸ Upload files*). Se a pasta oculta não subir, use *Add file ▸ Create new file*, digite o caminho `.github/workflows/build-windows.yml` e cole o conteúdo do arquivo `build-windows.yml`.
-3. Aba **Actions ▸ Build Windows VST3 ▸ Run workflow** (também roda sozinho a cada push).
-4. Ao terminar (✔ verde), abra a execução ▸ **Artifacts** ▸ baixe `MOOD-MKII-Study-win64` (contém `MOOD MKII Study.vst3` e o `.exe` Standalone). O artefato `MOOD-MKII-Study-demos` traz os renders `.wav` do núcleo.
-5. Copie a pasta `MOOD MKII Study.vst3` para `C:\Program Files\Common Files\VST3\` e faça *rescan* no DAW.
+**Jeito mais curto (só o zip):**
+1. Crie um repositório no GitHub (**público** = minutos grátis e ilimitados; privado = cota mensal do plano, e minutos de Windows contam em dobro).
+2. *Add file ▸ Upload files* → arraste `MoodMKII_Study_VST3_project.zip` (sem extrair) → *Commit*.
+3. *Add file ▸ Create new file* → digite o nome `.github/workflows/build-windows.yml` (as barras criam as pastas) → cole o conteúdo de `build-windows.yml` → *Commit*. Isso já dispara o build.
+4. Aba **Actions ▸ Build Windows VST3** (ou *Run workflow*; se houver mais de um `.zip`, informe o nome no campo `zip_name`).
+5. Ao terminar (✔ verde), abra a execução ▸ **Artifacts** ▸ `MOOD-MKII-Study-win64` (`MOOD MKII Study.vst3` + `.exe` Standalone). O artefato `MOOD-MKII-Study-demos` traz os renders `.wav` do núcleo.
+6. Copie a pasta `MOOD MKII Study.vst3` para `C:\Program Files\Common Files\VST3\` e faça *rescan* no DAW.
 
-Se ficar ❌, abra o passo vermelho e copie as linhas com `error` — normalmente é um ajuste pequeno na camada JUCE.
+Se ficar ❌, abra o passo vermelho e copie as linhas com `error`.
 O workflow usa o runner `windows-2022` (Visual Studio 2022) de propósito: o `windows-latest` está migrando para uma imagem com Visual Studio 2026, um compilador novo demais para o JUCE 8.0.4 fixado aqui.
 
 Teste do núcleo DSP (sem JUCE, roda em qualquer SO): `g++ -std=c++17 -O2 Tests/dsp_test.cpp -o dsp_test && ./dsp_test demos` (ou `-DMOOD_BUILD_DSP_TESTS=ON` no CMake).
@@ -71,12 +73,12 @@ LEDs: wet (vermelho; branco = freeze) · preset (âmbar) · loop (pisca no ritmo
 
 **Hidden options** (botão *HIDDEN OPTIONS* = "segurar os dois footswitches"): STEREO WIDTH (TIME) · TONE (MODIFY wet) · RAMP WAVEFORM (MIX: triângulo→quadrada→seno→random→random suave, com morph) · LEVEL BALANCE (CLOCK) · FADE (LENGTH) · DIRECT MICRO-LOOP (MODIFY loop) · SYNC (Unsynced / Loop→Wet / Wet→Loop) · SPREAD SOLO (Both / Wet / Loop) · LOOP LENGTH (Half / Full). *True Bypass* é um botão no topo. *Reset Hidden* restaura os padrões.
 
-**Extra (não existe no pedal)**: `out_level` (−24…+12 dB).
+**Extras (não existem no pedal)**: `out_level` (−24…+12 dB) e `clock_degrade` (**DEGRADE**, padrão 25 %): 0 % = o clock só muda tempo/pitch/banda, sem "bitcrush"; 100 % = aliasing bruto do pedal. Não entram nos presets.
 
 ## 4. Como o motor funciona
 
-* **CLOCK = taxa de amostragem do motor.** O motor roda a `fc` (2–64 kHz) via acumulador de fase; a entrada é amostrada **sem anti-aliasing** e a saída é *zero-order hold* quando `fc < fs` — daí o aliasing/"computer noises". Tudo (delay, reverb, loop) é medido em *amostras do clock*, então mexer no CLOCK escala tempo e pitch de wet e loop juntos, e overdubs ficam no lugar. Verificado nos testes: período do loop = 65 536 / fc (1,024 s a 64k; 4,096 s a 16k).
-* **Wet.** Reverb = Dattorro (tanque em 8, 4 difusores de entrada, 2 allpasses modulados); SMEAR escala os coeficientes dos allpasses (0 ⇒ só atrasos ⇒ cluster de ecos). Delay = 2 cabeças com crossfade (MKII, sem pitch-bend; trocar o TIME com feedback máx. "estica" o loop); Classic = glide do ponteiro (borrachudo). Slip = pitch-shifter de linha de atraso com 2 cabeças e janela sin², freeze = para de gravar e repete a janela. FREEZE: reverb com decay 1 e entrada muda; delay com feedback 1.
+* **CLOCK = taxa de amostragem do motor.** O motor roda a `fc` (2–64 kHz) via acumulador de fase; quando `fc < fs` a entrada é decimada e a saída é *zero-order hold* — daí o aliasing/"computer noises". O **DEGRADE** põe um passa-baixas Butterworth de 4ª ordem na entrada (anti-alias) e na saída (reconstrução) com corte em `0,4·2^(5·d²)·clock` (d = DEGRADE): 25 % ≈ corte no Nyquist do motor (aliasing 12–14 dB menor que o bruto em todos os clocks), 100 % = sem filtro. Com `clock ≥ fs` (48k/64k) nenhum filtro atua. Tudo (delay, reverb, loop) é medido em *amostras do clock*, então mexer no CLOCK escala tempo e pitch de wet e loop juntos, e overdubs ficam no lugar. Verificado nos testes: período do loop = 65 536 / fc (1,024 s a 64k; 4,096 s a 16k).
+* **Wet.** Reverb = Dattorro (tanque em 8, 4 difusores de entrada, 2 allpasses modulados); SMEAR escala os coeficientes dos allpasses (0 ⇒ só atrasos ⇒ cluster de ecos). Delay = 2 cabeças com crossfade (MKII, sem pitch-bend; trocar o TIME com feedback máx. "estica" o loop); Classic = glide do ponteiro (borrachudo). Slip = pitch-shifter de linha de atraso com 2 cabeças e janela sin², freeze = para de gravar e repete a janela. FREEZE: reverb com decay 1 e entrada muda; delay com feedback 1. A modulação do reverb tem taxa proporcional ao clock (desvio de pitch constante, ~2 cents, em todos os clocks) e o ganho de entrada acompanha o decay (nível de regime plano ±1 dB em todo o curso do TIME, sem crescimento no fim do knob).
 * **Looper.** Anel de 65 536 amostras sempre gravando (estado "ouvindo", `loop_on` = off). Ao ligar, o loop começa na amostra mais antiga e termina "agora". Desligar volta a gravar *por cima* do ponto de reprodução (função *replace*). Overdub grava só o sinal limpo (nunca o wet). Env = fatias que repetem enquanto há som na entrada; Tape = leitor com velocidade em oitavas e crossfade nas emendas; Stretch = granular (grãos Hann, hop = G/2) com cabeça de leitura de velocidade variável.
 * **Roteamento.** Ordem por tick: looper → (roteamento) → wet → soma. O looper "ouvindo" grava `entrada + wet` (ambiência embutida; *trail catcher* funciona). Loop roteado pelo wet vira 100 % wet, a menos de DIRECT MICRO-LOOP.
 * **Presets.** Left/Right guardam knobs, toggles, dips e hidden; voltar a Live restaura os knobs de antes. Salvar: botões *SAVE L / SAVE R* (no pedal: segurar 3 s + 3 s).
@@ -87,6 +89,7 @@ Ruído que cresce com a queda do CLOCK · loop que se degrada a cada passada (fi
 
 ## 6. O que é inferência (confira com o pedal de verdade)
 
+0. O valor padrão de DEGRADE (25 %) é preferência de uso, não do pedal; 100 % reproduz o aliasing bruto.
 1. Curvas e faixas de TIME/LENGTH/sensibilidade, tempo máximo de delay (65 000 amostras) e comprimento do loop (65 536 amostras FULL; 32 768 HALF — deduzido do vídeo e da opção LOOP LENGTH).
 2. Posição do "1×" no knob Tape (aqui: 8 zonas iguais, o meio fica entre −0,5× e +0,5×; padrão do plugin 1× à frente) e assimetria do reverso no Slip.
 3. Semântica exata de SWEEP/POLARITY (aqui: SWEEP define se o knob é topo ou fundo da faixa; POLARITY = subir/descer; *ramp* dispara quando o pedal é ligado) e de EXP/CV (mesmos dips; sem knob atribuído controla o MIX).

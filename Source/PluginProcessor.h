@@ -57,7 +57,7 @@ private:
         std::atomic<float> *rmpTime, *rmpWetModify, *rmpClock, *rmpLoopModify, *rmpLength, *rmpBounce, *rmpSweepTop, *rmpRise, *rmpSpeed;
         std::atomic<float> *ctrlSource, *expCv;
         std::atomic<float> *hStereoWidth, *hDirectLoop, *hTone, *hFade, *hBalance, *hRampWave, *hSync, *hSpreadSolo, *hLoopLen, *hTrueBypass;
-        std::atomic<float> *outLevel;
+        std::atomic<float> *outLevel, *clockDegrade;
     } raw {};
 
     mood::MoodEngine engine;

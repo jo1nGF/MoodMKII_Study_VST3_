@@ -83,4 +83,38 @@ struct DelayLine
         return hermite (at (i - 1), at (i), at (i + 1), at (i + 2), f);
     }
 };
+// Passa-baixas Butterworth de 4ª ordem (2 biquads). Usado como anti-alias de entrada / reconstrução de saída.
+// Coeficientes só são recalculados quando o corte muda.
+struct LowPass4
+{
+    float b0[2] = {}, b1[2] = {}, b2[2] = {}, a1[2] = {}, a2[2] = {}, z1[2] = {}, z2[2] = {};
+    float lastCut = -1.f;
+    void reset() { z1[0] = z1[1] = z2[0] = z2[1] = 0.f; }
+    void setCutoff (float hz, float fs)
+    {
+        hz = clampf (hz, 20.f, 0.45f * fs);
+        if (std::fabs (hz - lastCut) < 0.002f * hz) return;
+        lastCut = hz;
+        const float K = std::tan (kPi * hz / fs);
+        const float q[2] = { 0.5411961f, 1.3065630f };   // Butterworth 4ª ordem
+        for (int i = 0; i < 2; ++i)
+        {
+            const float norm = 1.f / (1.f + K / q[i] + K * K);
+            b0[i] = K * K * norm; b1[i] = 2.f * b0[i]; b2[i] = b0[i];
+            a1[i] = 2.f * (K * K - 1.f) * norm;
+            a2[i] = (1.f - K / q[i] + K * K) * norm;
+        }
+    }
+    inline float process (float x)
+    {
+        for (int i = 0; i < 2; ++i)
+        {
+            const float y = b0[i] * x + z1[i];
+            z1[i] = b1[i] * x - a1[i] * y + z2[i];
+            z2[i] = b2[i] * x - a2[i] * y;
+            x = y;
+        }
+        return x;
+    }
+};
 } // namespace mood

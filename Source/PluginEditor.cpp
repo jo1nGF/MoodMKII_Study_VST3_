@@ -17,6 +17,7 @@ MoodAudioProcessorEditor::MoodAudioProcessorEditor (MoodAudioProcessor& p)
       hRampWave (p.apvts, ids::hRampWave, "RAMP WAVEFORM", laf), hBalance (p.apvts, ids::hBalance, "LEVEL BALANCE", laf),
       hFade (p.apvts, ids::hFade, "FADE", laf), hDirect (p.apvts, ids::hDirectLoop, "DIRECT MICRO-LOOP", laf),
       kRampSpeed (p.apvts, ids::rmpSpeed, "RAMP SPEED", laf),
+      kDegrade (p.apvts, ids::clockDegrade, "DEGRADE", laf),
       swWet (p.apvts, ids::wetMode, { "REVERB", "DELAY", "SLIP" }),
       swRoute (p.apvts, ids::routing, { "IN", "IN + LOOP", "LOOP" }),
       swLoop (p.apvts, ids::loopMode, { "ENV", "TAPE", "STRETCH" }),
@@ -28,7 +29,7 @@ MoodAudioProcessorEditor::MoodAudioProcessorEditor (MoodAudioProcessor& p)
 {
     setSize (kW, kH);
 
-    for (auto* k : { &kTime, &kWetMod, &kMix, &kClock, &kLength, &kLoopMod, &hWidth, &hTone, &hRampWave, &hBalance, &hFade, &hDirect, &kRampSpeed })
+    for (auto* k : { &kTime, &kWetMod, &kMix, &kClock, &kLength, &kLoopMod, &hWidth, &hTone, &hRampWave, &hBalance, &hFade, &hDirect, &kRampSpeed, &kDegrade })
         addAndMakeVisible (k);
     for (auto* s : { &swWet, &swRoute, &swLoop, &swPreset, &hSync, &hSpreadSolo, &hLoopLen, &swCtrl })
         addAndMakeVisible (s);
@@ -139,6 +140,7 @@ void MoodAudioProcessorEditor::resized()
     swCtrl.setBounds (24, 124, 110, 50);
     expSlider.setBounds (210, 140, 150, 22);
     kRampSpeed.setBounds (380, 118, 80, 66);
+    kDegrade.setBounds (480, 118, 80, 66);
     outSlider.setBounds (580, 140, 150, 22);
     trueBypassBtn.setBounds (470, 8, 130, 26);
     hiddenBtn.setBounds (620, 8, 160, 28);

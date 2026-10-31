@@ -245,7 +245,7 @@ private:
     // knobs (modo normal) e (hidden options)
     ui::KnobComp kTime, kWetMod, kMix, kClock, kLength, kLoopMod;
     ui::KnobComp hWidth, hTone, hRampWave, hBalance, hFade, hDirect;
-    ui::KnobComp kRampSpeed;
+    ui::KnobComp kRampSpeed, kDegrade;
     // toggles
     ui::ChoiceSwitch swWet, swRoute, swLoop, swPreset;
     ui::ChoiceSwitch hSync, hSpreadSolo, hLoopLen;

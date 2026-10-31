@@ -157,19 +157,62 @@ static void testFreezeStable()
 
 static void testReverbLevel()
 {
-    std::printf ("[3] Calibração de nível do Reverb (ruído -> reverb)\n");
+    std::printf ("[3] Nível do Reverb (ruído -> reverb) ao longo do TIME: plano e sem crescimento descontrolado\n");
     const int fs = 48000; std::mt19937 rng (3); std::uniform_real_distribution<float> d (-1.f, 1.f);
-    const float tvals[] = { 0.2f, 0.5f, 0.8f }; const float svals[] = { 0.f, 1.f };
-    for (float sm : svals) for (float t : tvals)
+    const float tvals[] = { 0.2f, 0.5f, 0.8f, 0.95f, 1.0f };
+    float lo = 1e9f, hi = -1e9f;
+    for (float t : tvals)
     {
         MoodEngine e; e.prepare (fs);
-        EngineParams p; p.mix = 1.f; p.wetOn = true; p.wetMode = 0; p.wetTime = t; p.wetModify = sm; p.clock = 0.8f;
-        std::vector<float> in ((size_t) (8 * fs)); for (auto& x : in) x = d (rng) * 0.1f;
-        auto o = render (e, p, 8 * fs, [&] (int i) { return in[(size_t) i]; });
-        const float ri = rmsRange (in, 4 * fs, 8 * fs), ro = rmsRange (o.l, 4 * fs, 8 * fs);
-        std::printf ("  TIME %.1f SMEAR %.0f: in %.1f dB -> out %.1f dB (%+.1f dB)\n", t, sm, db (ri), db (ro), db (ro) - db (ri));
+        EngineParams p; p.mix = 1.f; p.wetOn = true; p.wetMode = 0; p.wetTime = t; p.wetModify = 1.f; p.clock = 0.8f;
+        std::vector<float> in ((size_t) (20 * fs)); for (auto& x : in) x = d (rng) * 0.1f;
+        auto o = render (e, p, 20 * fs, [&] (int i) { return in[(size_t) i]; });
+        const float ri = rmsRange (in, 3 * fs, 5 * fs), r1 = rmsRange (o.l, 3 * fs, 5 * fs), r2 = rmsRange (o.l, 15 * fs, 20 * fs);
+        std::printf ("  TIME %.2f: in %.1f dB -> out %.1f dB (3-5 s) | %.1f dB (15-20 s)\n", t, db (ri), db (r1), db (r2));
         CHECK (finiteAll (o), "NaN/Inf");
+        CHECK (db (r2) - db (r1) < 4.f, "TIME %.2f: nível continua subindo (%.1f dB)", t, db (r2) - db (r1));
+        CHECK (r2 < ri, "TIME %.2f: reverb mais alto que a entrada", t);
+        lo = std::min (lo, db (r2)); hi = std::max (hi, db (r2));
     }
+    std::printf ("  variação do nível de regime ao longo do TIME: %.1f dB\n", hi - lo);
+    CHECK (hi - lo < 3.5f, "nível varia demais com o TIME (%.1f dB)", hi - lo);
+}
+
+// energia inarmônica / harmônica (dB) de uma serra band-limited de 700 Hz passando só pelo motor (delay, fb = 0, só wet)
+static float aliasDb (const std::vector<float>& saw, int step, float degrade, std::vector<float>* keep = nullptr)
+{
+    const int fs = 48000; MoodEngine e; e.prepare (fs);
+    EngineParams p; p.mix = 1.f; p.wetOn = true; p.wetMode = 1; p.wetTime = 0.02f; p.wetModify = 0.f; p.clock = (float) step / 10.f; p.degrade = degrade;
+    const int n = 3 * fs;
+    auto o = render (e, p, n, [&] (int i) { return saw[(size_t) i % saw.size()]; });
+    if (keep) *keep = o.l;
+    const int a = 2 * fs, N = fs / 2; double eh = 0, ei = 0; const float f0 = 700.f;
+    for (float f = 100.f; f < 12000.f; f += 5.f)
+    {
+        double re = 0, im = 0;
+        for (int i = 0; i < N; ++i) { const double w = 0.5 - 0.5 * std::cos (2.0 * 3.14159265358979 * i / N), ph = 2.0 * 3.14159265358979 * f * (a + i) / fs; re += w * o.l[(size_t) (a + i)] * std::cos (ph); im += w * o.l[(size_t) (a + i)] * std::sin (ph); }
+        const double k = std::round (f / f0); (std::fabs (f - k * f0) < 8.f && k >= 1 ? eh : ei) += re * re + im * im;
+    }
+    return 10.f * std::log10 ((float) (ei / eh) + 1e-20f);
+}
+
+static void testDegrade()
+{
+    std::printf ("[3b] DEGRADE do clock: energia de aliasing (inarmônico/harmônico, dB)\n");
+    const int fs = 48000; std::vector<float> saw ((size_t) fs);
+    for (int i = 0; i < fs; ++i) { double t = (double) i / fs, s = 0; for (int k = 1; k <= 28; ++k) s += ((k & 1) ? 1 : -1) * std::sin (2.0 * 3.14159265358979 * k * 700.0 * t) / k; saw[(size_t) i] = (float) (0.3 * s * 0.6366); }
+    std::printf ("  clock      bruto(1.0)  padrão(0.25)  limpo(0.0)\n");
+    for (int st : { 6, 4, 2, 0 })
+    {
+        const float r1 = aliasDb (saw, st, 1.f), rd = aliasDb (saw, st, 0.25f), r0 = aliasDb (saw, st, 0.f);
+        std::printf ("  %5.0f Hz  %9.1f  %12.1f  %10.1f\n", kClockRates[st], r1, rd, r0);
+        CHECK (rd <= r1 - 8.f, "clock %.0f: DEGRADE padrão deveria reduzir >= 8 dB o aliasing", kClockRates[st]);
+        CHECK (r0 <= rd - 3.f, "clock %.0f: DEGRADE 0 deveria ser mais limpo que o padrão", kClockRates[st]);
+    }
+    std::vector<float> a, b; aliasDb (saw, 10, 0.f, &a); aliasDb (saw, 10, 1.f, &b);   // 64k >= fs: nenhum filtro deve atuar
+    float md = 0; for (size_t i = 0; i < a.size(); ++i) md = std::max (md, std::fabs (a[i] - b[i]));
+    std::printf ("  clock 64k (hi-fi): diferença máx. entre DEGRADE 0 e 1 = %.2g (esperado ~0)\n", md);
+    CHECK (md < 1e-5f, "hi-fi deveria ser transparente ao DEGRADE");
 }
 
 static void testBehaviors()
@@ -312,7 +355,9 @@ static void demos()
     { MoodEngine e; e.prepare (fs); EngineParams p; p.mix = 0.55f; p.wetOn = true; p.wetMode = 0; p.wetTime = 0.75f; p.wetModify = 0.9f; p.clock = 1.f;
       writeWav ("demos/01_reverb_hifi.wav", renderBuf (e, p, in), fs); }
     { MoodEngine e; e.prepare (fs); EngineParams p; p.mix = 0.55f; p.wetOn = true; p.wetMode = 0; p.wetTime = 0.75f; p.wetModify = 0.9f; p.clock = 0.6f;
-      writeWav ("demos/02_reverb_clock16k.wav", renderBuf (e, p, in, [&] (int b, EngineParams& q) { const float t = (float) b * 256.f / (float) fs; q.clock = t < 5.f ? 1.f : (t < 8.f ? 0.6f : 0.2f); }), fs); }
+      writeWav ("demos/02_reverb_clock_padrao.wav", renderBuf (e, p, in, [&] (int b, EngineParams& q) { const float t = (float) b * 256.f / (float) fs; q.clock = t < 5.f ? 1.f : (t < 8.f ? 0.6f : 0.2f); }), fs); }
+    { MoodEngine e; e.prepare (fs); EngineParams p; p.mix = 0.55f; p.wetOn = true; p.wetMode = 0; p.wetTime = 0.75f; p.wetModify = 0.9f; p.clock = 0.6f; p.degrade = 1.f;   // DEGRADE 100% = aliasing bruto (para comparar)
+      writeWav ("demos/02b_reverb_clock_BRUTO_degrade1.wav", renderBuf (e, p, in, [&] (int b, EngineParams& q) { const float t = (float) b * 256.f / (float) fs; q.clock = t < 5.f ? 1.f : (t < 8.f ? 0.6f : 0.2f); }), fs); }
     { MoodEngine e; e.prepare (fs); EngineParams p; p.mix = 0.6f; p.wetOn = true; p.wetMode = 1; p.wetTime = 0.25f; p.wetModify = 0.6f; p.clock = 1.f; p.spread = true;
       writeWav ("demos/03_delay_pingpong.wav", renderBuf (e, p, in), fs); }
     { MoodEngine e; e.prepare (fs); EngineParams p; p.mix = 0.7f; p.loopMode = 2; p.loopModify = 0.62f; p.loopLength = 0.45f; p.clock = 0.8f; p.loopHalf = false;
@@ -329,6 +374,7 @@ int main (int argc, char** argv)
     testLoopPeriodVsClock();
     testFreezeStable();
     testReverbLevel();
+    testDegrade();
     testBehaviors();
     testSpread();
     testFuzz();

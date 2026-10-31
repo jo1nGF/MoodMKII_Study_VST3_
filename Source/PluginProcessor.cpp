@@ -21,6 +21,7 @@ MoodAudioProcessor::MoodAudioProcessor()
     raw.hFade = r (ids::hFade); raw.hBalance = r (ids::hBalance); raw.hRampWave = r (ids::hRampWave); raw.hSync = r (ids::hSync);
     raw.hSpreadSolo = r (ids::hSpreadSolo); raw.hLoopLen = r (ids::hLoopLen); raw.hTrueBypass = r (ids::hTrueBypass);
     raw.outLevel = r (ids::outLevel);
+    raw.clockDegrade = r (ids::clockDegrade);
 
     scratchR.assign (4096, 0.f);
     slot[0] = slot[1] = liveSnapshot = captureParams();
@@ -68,6 +69,7 @@ mood::EngineParams MoodAudioProcessor::readParams() const
     e.balance = f (raw.hBalance); e.rampWaveform = f (raw.hRampWave);
     e.sync = i (raw.hSync); e.spreadSolo = i (raw.hSpreadSolo); e.loopHalf = (i (raw.hLoopLen) == 0);
     e.trueBypass = b (raw.hTrueBypass);
+    e.degrade = f (raw.clockDegrade);
     return e;
 }
 

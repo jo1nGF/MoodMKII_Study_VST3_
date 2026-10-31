@@ -173,12 +173,16 @@ private:
         const float t = p.time;
         Reverb::Params rp;
         rp.scale = lerpf (0.30f, 1.35f, t);                                    // TIME = tamanho...
-        const float dec = (t >= 0.985f) ? 1.f : lerpf (0.28f, 1.f, std::pow (t, 1.5f)); // ...e decay
+        // decay contínuo até 0.998 (sustain praticamente infinito, sem estourar). O ganho de entrada acompanha o decay
+        // (lei calibrada ~ (1-g²)^0.275) => nível de regime ~constante em todo o curso do TIME, sem "penhasco" de volume.
+        const float dec = lerpf (0.28f, 0.998f, std::pow (t, 1.5f));                     // ...e decay
+        const float dc = std::min (dec, 0.99f);   // acima de 0.99 o regime leva minutos: não compensa além disso
+        const float comp = std::pow ((1.f - dc * dc) / 0.36f, 0.275f);
         rp.decay = lerpf (dec, 1.f, frz);
         rp.smear = p.modify;                                                   // MODIFY = smear (0 multi-tap -> 1 reverb)
         rp.damp = lerpf (0.55f, 1.f, frz);
         rp.modDepth = p.classic ? 0.f : 1.f;                                   // Classic: sem modulação => "ringy"
-        rp.inputGain = 0.5f * (1.f - frz);
+        rp.inputGain = 0.5f * comp * (1.f - frz);
         rp.outGain = 1.0f;
         float al, ar, bl, br;
         if (!p.spread)   // 2 reverbs mono independentes: preserva a imagem estéreo de entrada

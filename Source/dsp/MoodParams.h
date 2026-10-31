@@ -36,6 +36,8 @@ struct EngineParams
     int spreadSolo = 0;      // 0 ambos, 1 só wet, 2 só looper
     bool loopHalf = false;   // loop pela metade (resposta do MOOD original)
     bool trueBypass = false;
+    // ---- extra (não existe no pedal) ----
+    float degrade = 0.25f;    // 0 = clock "limpo" (anti-alias + reconstrução) ... 1 = aliasing bruto "de fábrica"
 };
 
 inline float clockHzFromKnob (float knob, bool smooth)

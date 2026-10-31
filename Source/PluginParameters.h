@@ -57,6 +57,7 @@ namespace ids
     inline constexpr const char* hTrueBypass = "h_true_bypass";
     // extra (não existe no pedal)
     inline constexpr const char* outLevel = "out_level";
+    inline constexpr const char* clockDegrade = "clock_degrade";
 }
 
 // Parâmetros guardados nos presets (esquerda/direita). No pedal: knobs, toggles e dip switches.
@@ -153,6 +154,7 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
     addC (ids::hLoopLen,     "Hidden Loop Length",    StringArray { "Half", "Full" }, 1);
     addB (ids::hTrueBypass,  "Hidden True Bypass",    false);
     // ---- extra ----
+    addF (ids::clockDegrade, "Clock Degrade (extra)", 0.25f);
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { ids::outLevel, 1 }, "Output Level (dB)",
                                                        NormalisableRange<float> (-24.f, 12.f, 0.1f), 0.f));
     return layout;
