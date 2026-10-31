@@ -1,0 +1,50 @@
+name: Build Windows VST3
+
+on:
+  workflow_dispatch:        # botão "Run workflow" na aba Actions
+  push:
+    branches: [ main, master ]
+  pull_request:
+
+jobs:
+  # 1) Núcleo DSP (sem JUCE) em Linux: compila, roda os testes e gera os demos .wav
+  dsp-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compilar e rodar os testes do DSP
+        run: |
+          g++ -std=c++17 -O2 Tests/dsp_test.cpp -o dsp_test
+          ./dsp_test demos
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MOOD-MKII-Study-demos
+          path: demos
+
+  # 2) Plugin VST3 + Standalone para Windows x64 (MSVC / Visual Studio 2022)
+  windows-vst3:
+    runs-on: windows-2022     # se esse label sumir no futuro: troque por windows-2025 e remova o "-G ..." abaixo
+    steps:
+      - uses: actions/checkout@v4
+
+      # Novo passo: Extrai o arquivo .zip na pasta raiz (.) antes do CMake rodar
+      - name: Extrair projeto do ZIP
+        run: |
+          Expand-Archive -Path "MoodMKII_Study_VST3_project.zip" -DestinationPath "." -Force
+
+      - name: Configurar (baixa o JUCE)
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+      - name: Compilar o VST3
+        run: cmake --build build --config Release --target MoodMKIIStudy_VST3 --parallel
+      - name: Compilar o Standalone
+        run: cmake --build build --config Release --target MoodMKIIStudy_Standalone --parallel
+      - name: Empacotar
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item -Recurse -Force "build/MoodMKIIStudy_artefacts/Release/VST3/*" dist/
+          Copy-Item -Recurse -Force "build/MoodMKIIStudy_artefacts/Release/Standalone/*" dist/
+          Get-ChildItem -Recurse dist | Select-Object -First 40 -ExpandProperty FullName
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MOOD-MKII-Study-win64
+          path: dist 
