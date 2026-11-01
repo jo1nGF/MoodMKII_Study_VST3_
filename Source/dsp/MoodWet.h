@@ -89,6 +89,7 @@ public:
         float width = 0.8f, tone = 1.f;
         float fc = 32000.f;               // taxa do motor (Hz)
         float delaySamplesOverride = 0.f; // >0: tempo do delay vindo do SYNC (wet -> looper)
+        float lowCutHz = 20.f;            // passa-altas (2 polos) na saída do wet (extra do plugin)
     };
 
     void init()
@@ -109,6 +110,7 @@ public:
         for (auto& s : sl) s.clear();
         for (auto& r : ring) r.clear();
         for (auto& t : tone) for (auto& f : t) f.reset();
+        for (auto& t : lc) for (auto& f : t) f.reset();
     }
 
     bool isAudible() const { return outGain > 0.0005f; }
@@ -147,6 +149,13 @@ public:
             yl = tone[0][1].lp (tone[0][0].lp (yl, a), a);
             yr = tone[1][1].lp (tone[1][0].lp (yr, a), a);
         }
+        if (p.lowCutHz > 25.f)   // low cut do wet (2 estágios de 1 polo)
+        {
+            const float a = onePoleCoef (p.lowCutHz, fc);
+            const float h1l = yl - lc[0][0].lp (yl, a), h1r = yr - lc[1][0].lp (yr, a);
+            yl = h1l - lc[0][1].lp (h1l, a);
+            yr = h1r - lc[1][1].lp (h1r, a);
+        }
         outL = yl * outGain;
         outR = yr * outGain;
     }
@@ -177,13 +186,14 @@ private:
         // (lei calibrada ~ (1-g²)^0.275) => nível de regime ~constante em todo o curso do TIME, sem "penhasco" de volume.
         const float dec = lerpf (0.28f, 0.998f, std::pow (t, 1.5f));                     // ...e decay
         const float dc = std::min (dec, 0.99f);   // acima de 0.99 o regime leva minutos: não compensa além disso
-        const float comp = std::pow ((1.f - dc * dc) / 0.36f, 0.275f);
+        const float comp = std::sqrt ((1.f - dc * dc) / 0.36f);   // compensação plena: energia de regime ~constante (medida com ruído ROSA)
         rp.decay = lerpf (dec, 1.f, frz);
         rp.smear = p.modify;                                                   // MODIFY = smear (0 multi-tap -> 1 reverb)
-        rp.damp = lerpf (0.55f, 1.f, frz);
+        rp.damp = lerpf (lerpf (0.85f, 0.62f, p.modify), 1.f, frz);   // SMEAR baixo = ecos nítidos; alto = cauda mais suave
         rp.modDepth = p.classic ? 0.f : 1.f;                                   // Classic: sem modulação => "ringy"
-        rp.inputGain = 0.5f * comp * (1.f - frz);
-        rp.outGain = 1.0f;
+        rp.inputGain = 0.28f * comp * (1.f - frz);
+        rp.outGain = lerpf (2.2f, 1.0f, std::pow (p.modify, 0.6f));    // ecos (multi-tap) com presença: SMEAR 0 soa tão forte quanto o reverb
+        rp.hpHz = lerpf (120.f, 4.f, frz);   // no FREEZE o passa-altas do tanque sai de cena (senão os graves decairiam: sustain infinito)
         float al, ar, bl, br;
         if (!p.spread)   // 2 reverbs mono independentes: preserva a imagem estéreo de entrada
         {
@@ -257,7 +267,7 @@ private:
     DelayUnit dl[2];
     SlipUnit sl[2];
     DelayLine ring[2];
-    OnePole tone[2][2];
+    OnePole tone[2][2], lc[2][2];
     float inGain = 0.f, outGain = 0.f, frz = 0.f, panPhase = 0.f;
     bool armed = false;
 };

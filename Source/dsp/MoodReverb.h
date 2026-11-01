@@ -31,6 +31,7 @@ public:
         float modDepth = 1.f;   // modulação dos allpasses (0 = desligada)
         float inputGain = 0.5f;
         float outGain = 0.6f;
+        float hpHz = 150.f;     // passa-altas dentro do tanque (evita acúmulo de graves / "lama")
     };
 
     void init()
@@ -55,7 +56,7 @@ public:
         for (auto& s : side) { s.ap1.clear(); s.ap2.clear(); s.d1.clear(); s.d2.clear(); s.damp.reset(); s.dc.reset(); s.fb = 0.f; }
     }
 
-    void process (float in, float& outL, float& outR, const Params& p, float /*fc*/)
+    void process (float in, float& outL, float& outR, const Params& p, float fc)
     {
         float x = inBw.lp (in, 0.9f);
         const float g1 = 0.75f * p.smear, g2 = 0.625f * p.smear;
@@ -65,6 +66,7 @@ public:
         x = inAp[3].process (x, g2, (float) kIn[3]);
         x *= p.inputGain;
 
+        const float hpR = clampf (1.f - kTwoPi * p.hpHz / fc, 0.5f, 0.9995f);
         const float dg1 = 0.7f * p.smear;
         const float dg2 = clampf (p.decay + 0.15f, 0.25f, 0.5f) * p.smear;
 
@@ -79,7 +81,7 @@ public:
             const float a1 = S.ap1.process (inS[s], dg1, (float) kAp1[s] * p.scale + mod[s]);
             S.d1.write (a1);
             float d1o = S.d1.read ((float) kD1[s] * p.scale);
-            d1o = S.dc.process (d1o);
+            d1o = S.dc.process (d1o, hpR);
             const float dm = S.damp.lp (d1o, p.damp) * p.decay;
             const float a2 = S.ap2.process (dm, dg2, (float) kAp2[s] * p.scale);
             S.d2.write (a2);

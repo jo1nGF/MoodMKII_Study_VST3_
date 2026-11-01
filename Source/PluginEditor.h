@@ -1,5 +1,6 @@
 #pragma once
 #include <juce_audio_utils/juce_audio_utils.h>
+#include <map>
 #include "PluginProcessor.h"
 
 namespace ui
@@ -73,6 +74,40 @@ private:
     juce::AudioProcessorValueTreeState::SliderAttachment attach;
 };
 
+// Slider horizontal compacto com rótulo à esquerda e valor à direita
+class LabeledSlider : public juce::Component
+{
+public:
+    LabeledSlider (juce::AudioProcessorValueTreeState& apvts, const char* paramId, const juce::String& name, int labelWidth)
+        : label (name), lw (labelWidth), attach (apvts, paramId, slider)
+    {
+        slider.setSliderStyle (juce::Slider::LinearHorizontal);
+        slider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 52, 18);
+        slider.setColour (juce::Slider::textBoxTextColourId, kInk);
+        slider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+        slider.setColour (juce::Slider::trackColourId, kPlum);
+        slider.setColour (juce::Slider::thumbColourId, kPink);
+        slider.setColour (juce::Slider::backgroundColourId, kInk.withAlpha (0.18f));
+        if (auto* prm = apvts.getParameter (paramId))
+            slider.setDoubleClickReturnValue (true, prm->convertFrom0to1 (prm->getDefaultValue()));
+        addAndMakeVisible (slider);
+    }
+    void resized() override { slider.setBounds (getLocalBounds().withTrimmedLeft (lw)); }
+    void paint (juce::Graphics& g) override
+    {
+        g.setColour (kInk);
+        g.setFont (11.f);
+        g.drawText (label, getLocalBounds().withWidth (lw), juce::Justification::centredLeft);
+    }
+
+    juce::Slider slider;
+
+private:
+    juce::String label;
+    int lw;
+    juce::AudioProcessorValueTreeState::SliderAttachment attach;
+};
+
 // Toggle de 2 ou 3 posições ligado a um parâmetro "choice"
 class ChoiceSwitch : public juce::Component
 {
@@ -111,6 +146,7 @@ public:
 
     void mouseDown (const juce::MouseEvent& e) override
     {
+        if (e.mods.isPopupMenu()) return;   // botão direito = menu MIDI (tratado pelo editor)
         const int n = labels.size();
         const float top = 14.f, bottom = (float) getHeight() - 14.f;
         const float step = (bottom - top) / (float) juce::jmax (1, n - 1);
@@ -140,6 +176,8 @@ public:
     {
         label = labelText; upChar = up; downChar = down; repaint();
     }
+    void mouseDown (const juce::MouseEvent& e) override { if (! e.mods.isPopupMenu()) juce::Button::mouseDown (e); }
+    void mouseUp (const juce::MouseEvent& e) override { if (! e.mods.isPopupMenu()) juce::Button::mouseUp (e); }
     void paintButton (juce::Graphics& g, bool, bool) override
     {
         auto b = getLocalBounds().toFloat();
@@ -165,11 +203,20 @@ private:
     juce::String label, upChar, downChar;
 };
 
-// Footswitch: toque curto = tap; segurar (>450 ms) = hold (freeze / overdub)
+// ToggleButton que ignora o botão direito (reservado ao menu de MIDI Learn)
+class NoRightClickToggle : public juce::ToggleButton
+{
+public:
+    using juce::ToggleButton::ToggleButton;
+    void mouseDown (const juce::MouseEvent& e) override { if (! e.mods.isPopupMenu()) juce::ToggleButton::mouseDown (e); }
+    void mouseUp (const juce::MouseEvent& e) override { if (! e.mods.isPopupMenu()) juce::ToggleButton::mouseUp (e); }
+};
+
+// Footswitch: só informa "pressionado / solto" (o gesto tap / hold é decodificado no processador)
 class FootSwitchComp : public juce::Component, private juce::Timer
 {
 public:
-    std::function<void()> onTap, onHoldStart, onHoldEnd;
+    std::function<void()> onPress, onRelease;
     ~FootSwitchComp() override { stopTimer(); }
 
     void paint (juce::Graphics& g) override
@@ -193,30 +240,27 @@ public:
             g.drawEllipse (c.x - r - 4.f, c.y - r - 4.f, r * 2.f + 8.f, r * 2.f + 8.f, 3.f);
         }
     }
-    void mouseDown (const juce::MouseEvent&) override
+    void mouseDown (const juce::MouseEvent& e) override
     {
+        if (e.mods.isPopupMenu()) return;
         down = true; held = false;
         downMs = juce::Time::getMillisecondCounter();
         startTimerHz (30);
         repaint();
+        if (onPress) onPress();
     }
-    void mouseUp (const juce::MouseEvent&) override
+    void mouseUp (const juce::MouseEvent& e) override
     {
+        if (e.mods.isPopupMenu() || ! down) return;
         stopTimer();
-        if (held) { if (onHoldEnd) onHoldEnd(); }
-        else if (down) { if (onTap) onTap(); }
         down = held = false;
         repaint();
+        if (onRelease) onRelease();
     }
 private:
     void timerCallback() override
     {
-        if (down && ! held && juce::Time::getMillisecondCounter() - downMs > 450u)
-        {
-            held = true;
-            if (onHoldStart) onHoldStart();
-            repaint();
-        }
+        if (down && ! held && juce::Time::getMillisecondCounter() - downMs > 450u) { held = true; repaint(); }
     }
     bool down = false, held = false;
     juce::uint32 downMs = 0;
@@ -230,13 +274,19 @@ public:
     ~MoodAudioProcessorEditor() override;
     void paint (juce::Graphics&) override;
     void resized() override;
+    void mouseDown (const juce::MouseEvent& e) override;   // botão direito em qualquer controle => menu de MIDI Learn
 
 private:
     void timerCallback() override;
     void setHiddenVisible (bool hidden);
     bool getBool (const char* id) const;
-    void setBool (const char* id, bool v);
+    void setFs (const char* id, bool pressed);
     void drawLed (juce::Graphics& g, float cx, float cy, juce::Colour c, bool on) const;
+    void showMidiMenu (const juce::String& paramId);
+    void handleMidiMenuResult (int result, const juce::String& paramId);
+    void refreshPresetList();
+    void syncPresetBox();
+    void reg (juce::Component* c, const char* paramId) { paramOf[c] = paramId; }
 
     MoodAudioProcessor& proc;
     ui::MoodLookAndFeel laf;
@@ -245,24 +295,33 @@ private:
     // knobs (modo normal) e (hidden options)
     ui::KnobComp kTime, kWetMod, kMix, kClock, kLength, kLoopMod;
     ui::KnobComp hWidth, hTone, hRampWave, hBalance, hFade, hDirect;
-    ui::KnobComp kRampSpeed, kDegrade;
     // toggles
     ui::ChoiceSwitch swWet, swRoute, swLoop, swPreset;
     ui::ChoiceSwitch hSync, hSpreadSolo, hLoopLen;
     ui::ChoiceSwitch swCtrl;
+    // sliders compactos
+    ui::LabeledSlider sExp, sRamp, sIn, sOut, sLowCut, sDegrade, sNoise;
     // dip switches
     ui::DipSwitch dipCfg[8], dipRamp[8];
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> dipAtt[16];
     // footswitches
     ui::FootSwitchComp fsWet, fsLoop;
-    // extras
-    juce::Slider expSlider { juce::Slider::LinearHorizontal, juce::Slider::NoTextBox };
-    juce::AudioProcessorValueTreeState::SliderAttachment expAtt { proc.apvts, ids::expCv, expSlider };
-    juce::Slider outSlider { juce::Slider::LinearHorizontal, juce::Slider::NoTextBox };
-    juce::AudioProcessorValueTreeState::SliderAttachment outAtt { proc.apvts, ids::outLevel, outSlider };
-    juce::ToggleButton trueBypassBtn { "TRUE BYPASS" };
+    // botões
+    ui::NoRightClickToggle trueBypassBtn { "TRUE BYPASS" };
     juce::AudioProcessorValueTreeState::ButtonAttachment trueBypassAtt { proc.apvts, ids::hTrueBypass, trueBypassBtn };
     juce::TextButton hiddenBtn { "HIDDEN OPTIONS" }, saveL { "SAVE L" }, saveR { "SAVE R" }, resetHiddenBtn { "RESET HIDDEN" };
+    // barra de presets
+    juce::ComboBox presetBox;
+    juce::TextButton prevBtn { "<" }, nextBtn { ">" }, saveBtn { "SAVE" }, delBtn { "DEL" }, dirBtn { "DIR" };
+    std::vector<MoodAudioProcessor::PresetEntry> presetEntries;
+    juce::String shownPreset;
+
+    // MIDI learn / status / medidores
+    std::map<juce::Component*, juce::String> paramOf;
+    juce::String statusText, lastLearnName;
+    double statusUntil = 0.0, limitHoldUntil = 0.0;
+    bool wasLearning = false;
+    float meterIn = 0.f, meterOut = 0.f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MoodAudioProcessorEditor)
 };

@@ -58,6 +58,16 @@ namespace ids
     // extra (não existe no pedal)
     inline constexpr const char* outLevel = "out_level";
     inline constexpr const char* clockDegrade = "clock_degrade";
+    inline constexpr const char* inLevel = "in_level";
+    inline constexpr const char* clockNoise = "clock_noise";
+    inline constexpr const char* wetLowCut = "wet_lowcut";
+    // gestos de footswitch e ações (momentâneos): mapeáveis em qualquer controlador / MIDI
+    inline constexpr const char* fsWet = "fs_wet";
+    inline constexpr const char* fsLoop = "fs_loop";
+    inline constexpr const char* actSaveLeft = "act_save_left";
+    inline constexpr const char* actSaveRight = "act_save_right";
+    inline constexpr const char* actPrevPreset = "act_prev_preset";
+    inline constexpr const char* actNextPreset = "act_next_preset";
 }
 
 // Parâmetros guardados nos presets (esquerda/direita). No pedal: knobs, toggles e dip switches.
@@ -70,6 +80,16 @@ inline const std::vector<const char*>& presetParamIds()
         ids::rmpTime, ids::rmpWetModify, ids::rmpClock, ids::rmpLoopModify, ids::rmpLength, ids::rmpBounce, ids::rmpSweepTop,
         ids::rmpRise, ids::rmpSpeed, ids::ctrlSource,
         ids::hStereoWidth, ids::hDirectLoop, ids::hTone, ids::hFade, ids::hBalance, ids::hRampWave, ids::hSync, ids::hSpreadSolo, ids::hLoopLen };
+    return v;
+}
+
+// Presets de usuário (arquivos): tudo que sai do som, inclusive os extras de "limpeza" do plugin
+inline const std::vector<const char*>& userPresetParamIds()
+{
+    static const std::vector<const char*> v = [] {
+        std::vector<const char*> r = presetParamIds();
+        r.push_back (ids::clockDegrade); r.push_back (ids::clockNoise); r.push_back (ids::wetLowCut);
+        return r; }();
     return v;
 }
 
@@ -154,7 +174,18 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
     addC (ids::hLoopLen,     "Hidden Loop Length",    StringArray { "Half", "Full" }, 1);
     addB (ids::hTrueBypass,  "Hidden True Bypass",    false);
     // ---- extra ----
-    addF (ids::clockDegrade, "Clock Degrade (extra)", 0.25f);
+    addF (ids::clockDegrade, "Clock Degrade (extra)", 0.10f);
+    addF (ids::clockNoise,   "Clock Noise (extra)",   0.5f);
+    addF (ids::wetLowCut,    "Wet Low Cut (extra)",   0.35f);
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { ids::inLevel, 1 }, "Input Level (dB)",
+                                                       NormalisableRange<float> (-24.f, 12.f, 0.1f), 0.f));
+    // gestos de footswitch (tap / hold) e ações: botões momentâneos, mapeáveis em controladores
+    addB (ids::fsWet,         "Footswitch Wet (tap / hold)",  false);
+    addB (ids::fsLoop,        "Footswitch Loop (tap / hold)", false);
+    addB (ids::actSaveLeft,   "Action: Save Preset LEFT",     false);
+    addB (ids::actSaveRight,  "Action: Save Preset RIGHT",    false);
+    addB (ids::actPrevPreset, "Action: Previous Preset",      false);
+    addB (ids::actNextPreset, "Action: Next Preset",          false);
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { ids::outLevel, 1 }, "Output Level (dB)",
                                                        NormalisableRange<float> (-24.f, 12.f, 0.1f), 0.f));
     return layout;

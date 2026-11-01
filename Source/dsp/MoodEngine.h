@@ -46,6 +46,8 @@ public:
         std::atomic<float> loopPhase { 0.f }, loopPeriod { 1.f }, clockHz { 64000.f };
         std::atomic<int> loopState { 0 };   // 0 gravando (ouvindo), 1 tocando, 2 overdub
         std::atomic<bool> wetAudible { false };
+        std::atomic<float> inPeak { 0.f }, outPeak { 0.f };   // picos do último bloco
+        std::atomic<int> limitHits { 0 };                       // amostras em que o limitador interno atuou no último bloco
     };
 
     void prepare (double sampleRate)
@@ -69,7 +71,8 @@ public:
         ramper = Ramper{};
         for (auto& f : aaIn) f.reset();
         for (auto& f : aaOut) f.reset();
-        aaMix = 0.f;
+        aaMix = 0.f; nzLvl = 0.f;
+        for (auto& f : nzLp) f.reset();
     }
 
     // Pode ser chamado "in-place" (in == out).
@@ -86,6 +89,9 @@ public:
         if (anyOn && ! prevAnyOn) ramper.trigger();   // "ramp" dispara quando o pedal é ligado
         prevAnyOn = anyOn;
         const bool anyKnob = p.rampTime || p.rampWetModify || p.rampClock || p.rampLoopModify || p.rampLength;
+        const float kHead = 0.5f;   // headroom interno de 6 dB: o motor trabalha com metade da amplitude e a saída volta ao ganho original
+        float blkIn = 0.f, blkOut = 0.f;
+        int hits = 0;
         const float gW = std::min (1.f, 2.f * (1.f - p.balance));   // LEVEL BALANCE
         const float gL = std::min (1.f, 2.f * p.balance);
 
@@ -116,6 +122,7 @@ public:
                 fc = clockHzFromKnob (cEff, p.smoothClock); fcLog = std::log2 (fc);
                 activeWetMode = p.wetMode; activeLoopMode = p.loopMode;
                 dryG = p.dryKill ? 0.f : 1.f; moodG = 0.f;
+                smDeg = p.degrade; smNoise = p.noise; smLowCut = p.wetLowCut;
                 needInit = false;
             }
             smTime += aSm * (tEff - smTime);
@@ -123,6 +130,9 @@ public:
             smLoopLen += aSm * (llEff - smLoopLen);
             smLoopMod += aSm * (lmEff - smLoopMod);
             smMix += aSm * (mixEff - smMix);
+            smDeg += aSm * (p.degrade - smDeg);
+            smNoise += aSm * (p.noise - smNoise);
+            smLowCut += aSm * (p.wetLowCut - smLowCut);
 
             // ---- CLOCK: 11 passos harmonizados (ou contínuo com SMOOTH) ----
             const float fcT = clockHzFromKnob (cEff, p.smoothClock);
@@ -159,6 +169,11 @@ public:
             wpar.spread = p.spread && p.spreadSolo != 2;
             wpar.classic = p.classic; wpar.trails = p.trails; wpar.width = p.stereoWidth; wpar.tone = p.tone;
             wpar.fc = fc; wpar.delaySamplesOverride = delayOverride;
+            wpar.lowCutHz = 20.f * std::exp2 (5.3f * clampf (smLowCut, 0.f, 1.f));
+            {   // ruído suave ("hiss" de clock): cresce quando o CLOCK desce, é amostrado no clock do motor (textura digital) e passa pelo filtro de reconstrução
+                const float cn = clampf (std::log2 (fc / 2000.f) / 5.f, 0.f, 1.f);
+                nzLvl = clampf (smNoise, 0.f, 1.f) * 0.012f * kHead * std::pow (1.f - cn, 1.4f);
+            }
 
             lpar.mode = activeLoopMode; lpar.length = smLoopLen; lpar.modify = smLoopMod;
             lpar.play = p.loopOn; lpar.overdub = p.loopOverdub;
@@ -171,7 +186,7 @@ public:
             // ---- DEGRADE: anti-alias de entrada + reconstrução de saída (passa-baixas 4ª ordem em kk * clock) ----
             // 0 = limpo (corte em 0,4 x clock) ... 1 = bruto, sem filtro (aliasing "computer noises" do pedal).
             // O filtro só age quando clock < sample rate do host (é aí que há decimação / imagens do ZOH).
-            const float dg = clampf (p.degrade, 0.f, 1.f);
+            const float dg = clampf (smDeg, 0.f, 1.f);
             const float cutHz = 0.40f * std::exp2 (5.f * dg * dg) * fc;
             const bool useAa = fc < fs && cutHz < 0.45f * fs;
             aaMix += aGain * ((useAa ? 1.f : 0.f) - aaMix);
@@ -180,8 +195,9 @@ public:
             const float xinL = dryL + aaMix * (fL - dryL), xinR = dryR + aaMix * (fR - dryR);
 
             // ---- ticks do motor (taxa = clock) ----
-            hl[3] = hl[2]; hl[2] = hl[1]; hl[1] = hl[0]; hl[0] = xinL;
-            hr[3] = hr[2]; hr[2] = hr[1]; hr[1] = hr[0]; hr[0] = xinR;
+            hl[3] = hl[2]; hl[2] = hl[1]; hl[1] = hl[0]; hl[0] = xinL * kHead;
+            hr[3] = hr[2]; hr[2] = hr[1]; hr[1] = hr[0]; hr[0] = xinR * kHead;
+            blkIn = std::max (blkIn, std::max (std::fabs (dryL), std::fabs (dryR)));
             const double inc = (double) fc / (double) fs;
             const double ph = tickPhase + inc;
             const int ntAll = (int) ph;
@@ -210,9 +226,10 @@ public:
                 noisePh += kTwoPi * (fc * 0.25f) / fs;
                 if (noisePh > kTwoPi) noisePh -= kTwoPi;
                 const float nz = (noiseRng.bipolar() + 0.6f * std::sin (noisePh)) * lvl;
-                yl += nz; yr += nz * 0.9f;
+                yl += nz * kHead; yr += nz * 0.9f * kHead;
             }
-            yl = softLimit (yl); yr = softLimit (yr);
+            if (std::fabs (yl) > 0.9f || std::fabs (yr) > 0.9f) ++hits;
+            yl = softLimit (yl) / kHead; yr = softLimit (yr) / kHead;
 
             // ---- MIX (crossfade equal-power) + DRY KILL ----
             const bool active = wet.isAudible() || p.loopOn;
@@ -220,10 +237,14 @@ public:
             const float td = p.dryKill ? 0.f : (active ? std::cos (smMix * kPi * 0.5f) : 1.f);
             moodG += aGain * (tm - moodG);
             dryG += aGain * (td - dryG);
-            outL[i] = dryL * dryG + yl * moodG;
-            outR[i] = dryR * dryG + yr * moodG;
+            const float oLv = dryL * dryG + yl * moodG, oRv = dryR * dryG + yr * moodG;
+            outL[i] = oLv; outR[i] = oRv;
+            blkOut = std::max (blkOut, std::max (std::fabs (oLv), std::fabs (oRv)));
         }
 
+        telemetry.inPeak.store (blkIn);
+        telemetry.outPeak.store (blkOut);
+        telemetry.limitHits.store (hits);
         telemetry.loopPhase.store (looper.phase());
         telemetry.loopPeriod.store ((float) looper.length() / fc);
         telemetry.clockHz.store (fc);
@@ -248,8 +269,9 @@ private:
         wetPrevL = ywl; wetPrevR = ywr;
 
         const float dl = (route == 0) ? 1.f : directLoop;   // loop roteado pelo Wet vira 100% wet (salvo DIRECT MICRO-LOOP)
-        const float mL = ywl * gWet + lo.l * dl * gLoop;
-        const float mR = ywr * gWet + lo.r * dl * gLoop;
+        const float nzL = nzLp[0].lp (noiseRng.bipolar(), 0.6f) * nzLvl, nzR = nzLp[1].lp (noiseRng.bipolar(), 0.6f) * nzLvl;
+        const float mL = ywl * gWet + lo.l * dl * gLoop + nzL;
+        const float mR = ywr * gWet + lo.r * dl * gLoop + nzR;
         ohl[3] = ohl[2]; ohl[2] = ohl[1]; ohl[1] = ohl[0]; ohl[0] = mL;
         ohr[3] = ohr[2]; ohr[2] = ohr[1]; ohr[1] = ohr[0]; ohr[0] = mR;
     }
@@ -263,6 +285,8 @@ private:
     Rng noiseRng;
     LowPass4 aaIn[2], aaOut[2];
     float aaMix = 0.f;
+    float smDeg = 0.1f, smNoise = 0.5f, smLowCut = 0.35f, nzLvl = 0.f;
+    OnePole nzLp[2];
 
     double tickPhase = 0.0;
     float fc = 64000.f, fcLog = 15.97f;

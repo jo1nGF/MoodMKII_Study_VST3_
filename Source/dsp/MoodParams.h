@@ -37,7 +37,9 @@ struct EngineParams
     bool loopHalf = false;   // loop pela metade (resposta do MOOD original)
     bool trueBypass = false;
     // ---- extra (não existe no pedal) ----
-    float degrade = 0.25f;    // 0 = clock "limpo" (anti-alias + reconstrução) ... 1 = aliasing bruto "de fábrica"
+    float degrade = 0.10f;    // 0 = clock "limpo" (anti-alias + reconstrução) ... 1 = aliasing bruto "de fábrica"
+    float noise = 0.5f;       // ruído suave que cresce quando o CLOCK desce (0 = desligado)
+    float wetLowCut = 0.35f;  // 0..1 -> 20 Hz .. ~790 Hz: passa-altas do canal wet
 };
 
 inline float clockHzFromKnob (float knob, bool smooth)

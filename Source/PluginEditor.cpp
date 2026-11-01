@@ -4,8 +4,9 @@ using namespace ui;
 
 namespace
 {
-constexpr int kW = 800, kH = 900;
-const char* kClockLabels[11] = { "2k", "3k", "4k", "6k", "8k", "12k", "16k", "24k", "32k", "48k", "64k" };
+constexpr int kW = 800, kH = 960, kDy = 56;   // kDy: deslocamento do corpo do pedal (cabecalho + dips + extras ficam acima)
+const char* const kClockLabels[11] = { "2k", "3k", "4k", "6k", "8k", "12k", "16k", "24k", "32k", "48k", "64k" };
+const char* const kTip = "Botao direito em qualquer controle = MIDI Learn   |   Presets: digite um nome na caixa e clique SAVE";
 }
 
 MoodAudioProcessorEditor::MoodAudioProcessorEditor (MoodAudioProcessor& p)
@@ -16,8 +17,6 @@ MoodAudioProcessorEditor::MoodAudioProcessorEditor (MoodAudioProcessor& p)
       hWidth (p.apvts, ids::hStereoWidth, "STEREO WIDTH", laf), hTone (p.apvts, ids::hTone, "TONE", laf),
       hRampWave (p.apvts, ids::hRampWave, "RAMP WAVEFORM", laf), hBalance (p.apvts, ids::hBalance, "LEVEL BALANCE", laf),
       hFade (p.apvts, ids::hFade, "FADE", laf), hDirect (p.apvts, ids::hDirectLoop, "DIRECT MICRO-LOOP", laf),
-      kRampSpeed (p.apvts, ids::rmpSpeed, "RAMP SPEED", laf),
-      kDegrade (p.apvts, ids::clockDegrade, "DEGRADE", laf),
       swWet (p.apvts, ids::wetMode, { "REVERB", "DELAY", "SLIP" }),
       swRoute (p.apvts, ids::routing, { "IN", "IN + LOOP", "LOOP" }),
       swLoop (p.apvts, ids::loopMode, { "ENV", "TAPE", "STRETCH" }),
@@ -25,16 +24,22 @@ MoodAudioProcessorEditor::MoodAudioProcessorEditor (MoodAudioProcessor& p)
       hSync (p.apvts, ids::hSync, { "UNSYNCED", "LOOP -> WET", "WET -> LOOP" }),
       hSpreadSolo (p.apvts, ids::hSpreadSolo, { "BOTH", "WET ONLY", "LOOP ONLY" }),
       hLoopLen (p.apvts, ids::hLoopLen, { "HALF", "FULL" }),
-      swCtrl (p.apvts, ids::ctrlSource, { "RAMP", "EXP / CV" })
+      swCtrl (p.apvts, ids::ctrlSource, { "RAMP", "EXP / CV" }),
+      sExp (p.apvts, ids::expCv, "EXP / CV", 62), sRamp (p.apvts, ids::rmpSpeed, "RAMP SPEED", 62),
+      sIn (p.apvts, ids::inLevel, "INPUT dB", 62), sOut (p.apvts, ids::outLevel, "OUTPUT dB", 62),
+      sLowCut (p.apvts, ids::wetLowCut, "WET LOW CUT", 62),
+      sDegrade (p.apvts, ids::clockDegrade, "DEGRADE", 62), sNoise (p.apvts, ids::clockNoise, "NOISE", 62)
 {
     setSize (kW, kH);
 
-    for (auto* k : { &kTime, &kWetMod, &kMix, &kClock, &kLength, &kLoopMod, &hWidth, &hTone, &hRampWave, &hBalance, &hFade, &hDirect, &kRampSpeed, &kDegrade })
+    for (auto* k : { &kTime, &kWetMod, &kMix, &kClock, &kLength, &kLoopMod, &hWidth, &hTone, &hRampWave, &hBalance, &hFade, &hDirect })
         addAndMakeVisible (k);
     for (auto* s : { &swWet, &swRoute, &swLoop, &swPreset, &hSync, &hSpreadSolo, &hLoopLen, &swCtrl })
         addAndMakeVisible (s);
+    for (auto* s : { &sExp, &sRamp, &sIn, &sOut, &sLowCut, &sDegrade, &sNoise })
+        addAndMakeVisible (s);
 
-    // ---- dip switches (config) ----
+    // ---- dip switches ----
     const char* cfgIds[8] = { ids::dipClassic, ids::dipMiso, ids::dipSpread, ids::dipDryKill, ids::dipTrails, ids::dipLatch, ids::dipNoDub, ids::dipSmooth };
     const char* cfgNames[8] = { "CLASSIC", "MISO", "SPREAD", "DRY KILL", "TRAILS", "LATCH", "NO DUB", "SMOOTH" };
     const char* rmpIds[8] = { ids::rmpTime, ids::rmpWetModify, ids::rmpClock, ids::rmpLoopModify, ids::rmpLength, ids::rmpBounce, ids::rmpSweepTop, ids::rmpRise };
@@ -47,11 +52,11 @@ MoodAudioProcessorEditor::MoodAudioProcessorEditor (MoodAudioProcessor& p)
         addAndMakeVisible (dipRamp[i]);
         dipAtt[i] = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (p.apvts, cfgIds[i], dipCfg[i]);
         dipAtt[8 + i] = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (p.apvts, rmpIds[i], dipRamp[i]);
+        reg (&dipCfg[i], cfgIds[i]);
+        reg (&dipRamp[i], rmpIds[i]);
     }
 
-    // ---- extras ----
-    addAndMakeVisible (expSlider);
-    addAndMakeVisible (outSlider);
+    // ---- botoes ----
     addAndMakeVisible (trueBypassBtn);
     addAndMakeVisible (hiddenBtn);
     addAndMakeVisible (saveL);
@@ -62,41 +67,71 @@ MoodAudioProcessorEditor::MoodAudioProcessorEditor (MoodAudioProcessor& p)
     saveL.onClick = [this] { proc.savePresetSlot (0); };
     saveR.onClick = [this] { proc.savePresetSlot (1); };
     resetHiddenBtn.onClick = [this] { proc.resetHiddenOptions(); };
-    saveL.setTooltip ("Guarda os knobs/toggles/dips atuais no preset ESQUERDO");
-    saveR.setTooltip ("Guarda os knobs/toggles/dips atuais no preset DIREITO");
     trueBypassBtn.setColour (juce::ToggleButton::textColourId, kInk);
     trueBypassBtn.setColour (juce::ToggleButton::tickColourId, kRed);
 
-    // ---- footswitches ----
-    // ESQUERDO (Wet): tap = liga/desliga; segurar = FREEZE (LATCH: segurar alterna)
-    fsWet.onTap = [this]
+    // ---- barra de presets (fabrica + usuario) ----
+    presetBox.setEditableText (true);
+    presetBox.setTextWhenNothingSelected ("Preset...");
+    presetBox.onChange = [this]
     {
-        const bool on = ! getBool (ids::wetOn);
-        setBool (ids::wetOn, on);
-        if (! on) setBool (ids::wetFreeze, false);
+        const int id = presetBox.getSelectedId();
+        if (id >= 1 && id <= (int) presetEntries.size())
+        {
+            proc.loadPreset (presetEntries[(size_t) id - 1]);
+            shownPreset = proc.getCurrentPresetName();
+        }
     };
-    fsWet.onHoldStart = [this]
+    addAndMakeVisible (presetBox);
+    for (auto* b : { &prevBtn, &nextBtn, &saveBtn, &delBtn, &dirBtn })
+        addAndMakeVisible (b);
+    prevBtn.onClick = [this] { proc.stepPreset (-1); syncPresetBox(); };
+    nextBtn.onClick = [this] { proc.stepPreset (1); syncPresetBox(); };
+    saveBtn.onClick = [this]
     {
-        if (! getBool (ids::wetOn)) setBool (ids::wetOn, true);
-        setBool (ids::wetFreeze, getBool (ids::dipLatch) ? ! getBool (ids::wetFreeze) : true);
+        const auto name = presetBox.getText().trim();
+        if (name.isNotEmpty() && proc.saveUserPreset (name))
+        {
+            refreshPresetList();
+            presetBox.setText (proc.getCurrentPresetName(), juce::dontSendNotification);
+            shownPreset = proc.getCurrentPresetName();
+            statusText = "Preset salvo: " + proc.getCurrentPresetName();
+            statusUntil = juce::Time::getMillisecondCounterHiRes() + 4000.0;
+        }
     };
-    fsWet.onHoldEnd = [this] { if (! getBool (ids::dipLatch)) setBool (ids::wetFreeze, false); };
-    // DIREITO (Micro-Looper): tap = gravar <-> tocar; segurar (tocando) = OVERDUB
-    fsLoop.onTap = [this]
+    delBtn.onClick = [this]
     {
-        const bool on = ! getBool (ids::loopOn);
-        setBool (ids::loopOn, on);
-        if (! on) setBool (ids::loopOverdub, false);
+        if (proc.deleteUserPreset (presetBox.getText().trim()))
+        {
+            refreshPresetList();
+            statusText = "Preset removido";
+            statusUntil = juce::Time::getMillisecondCounterHiRes() + 3000.0;
+        }
     };
-    fsLoop.onHoldStart = [this]
-    {
-        if (! getBool (ids::loopOn)) return;
-        setBool (ids::loopOverdub, getBool (ids::dipLatch) ? ! getBool (ids::loopOverdub) : true);
-    };
-    fsLoop.onHoldEnd = [this] { if (! getBool (ids::dipLatch)) setBool (ids::loopOverdub, false); };
+    dirBtn.onClick = [this] { proc.getPresetDirectory().revealToUser(); };
+    refreshPresetList();
+
+    // ---- footswitches: pressionar / soltar viram o parametro momentaneo (gesto decodificado no processador) ----
+    fsWet.onPress = [this] { setFs (ids::fsWet, true); };
+    fsWet.onRelease = [this] { setFs (ids::fsWet, false); };
+    fsLoop.onPress = [this] { setFs (ids::fsLoop, true); };
+    fsLoop.onRelease = [this] { setFs (ids::fsLoop, false); };
     addAndMakeVisible (fsWet);
     addAndMakeVisible (fsLoop);
 
+    // ---- mapa controle -> parametro (para o menu de MIDI Learn com botao direito) ----
+    reg (&kTime, ids::wetTime); reg (&kWetMod, ids::wetModify); reg (&kMix, ids::mix); reg (&kClock, ids::clock);
+    reg (&kLength, ids::loopLength); reg (&kLoopMod, ids::loopModify);
+    reg (&hWidth, ids::hStereoWidth); reg (&hTone, ids::hTone); reg (&hRampWave, ids::hRampWave);
+    reg (&hBalance, ids::hBalance); reg (&hFade, ids::hFade); reg (&hDirect, ids::hDirectLoop);
+    reg (&swWet, ids::wetMode); reg (&swRoute, ids::routing); reg (&swLoop, ids::loopMode); reg (&swPreset, ids::presetSel);
+    reg (&hSync, ids::hSync); reg (&hSpreadSolo, ids::hSpreadSolo); reg (&hLoopLen, ids::hLoopLen); reg (&swCtrl, ids::ctrlSource);
+    reg (&sExp, ids::expCv); reg (&sRamp, ids::rmpSpeed); reg (&sIn, ids::inLevel); reg (&sOut, ids::outLevel);
+    reg (&sLowCut, ids::wetLowCut); reg (&sDegrade, ids::clockDegrade); reg (&sNoise, ids::clockNoise);
+    reg (&fsWet, ids::fsWet); reg (&fsLoop, ids::fsLoop); reg (&trueBypassBtn, ids::hTrueBypass);
+    addMouseListener (this, true);
+
+    statusText = kTip;
     setHiddenVisible (false);
     startTimerHz (30);
 }
@@ -105,13 +140,13 @@ MoodAudioProcessorEditor::~MoodAudioProcessorEditor() { stopTimer(); }
 
 bool MoodAudioProcessorEditor::getBool (const char* id) const { return proc.apvts.getRawParameterValue (id)->load() > 0.5f; }
 
-void MoodAudioProcessorEditor::setBool (const char* id, bool v)
+void MoodAudioProcessorEditor::setFs (const char* id, bool pressed)
 {
     if (auto* prm = proc.apvts.getParameter (id))
     {
-        prm->beginChangeGesture();
-        prm->setValueNotifyingHost (v ? 1.f : 0.f);
-        prm->endChangeGesture();
+        if (pressed) prm->beginChangeGesture();
+        prm->setValueNotifyingHost (pressed ? 1.f : 0.f);
+        if (! pressed) prm->endChangeGesture();
     }
 }
 
@@ -126,47 +161,157 @@ void MoodAudioProcessorEditor::setHiddenVisible (bool hidden)
     repaint();
 }
 
-void MoodAudioProcessorEditor::timerCallback() { repaint (0, 690, kW, 70); }
+// ---------------------------------------------------------------------------------------------
+// MIDI learn: botao direito em qualquer controle
+void MoodAudioProcessorEditor::mouseDown (const juce::MouseEvent& e)
+{
+    if (! e.mods.isPopupMenu()) return;
+    for (juce::Component* c = e.originalComponent; c != nullptr && c != this; c = c->getParentComponent())
+    {
+        const auto it = paramOf.find (c);
+        if (it != paramOf.end()) { showMidiMenu (it->second); return; }
+    }
+}
+
+void MoodAudioProcessorEditor::showMidiMenu (const juce::String& paramId)
+{
+    const int cc = proc.getMappedCC (paramId);
+    juce::PopupMenu m;
+    m.addSectionHeader (proc.getParamDisplayName (paramId));
+    m.addItem (1, "MIDI Learn (mova um controle MIDI)");
+    m.addItem (2, cc >= 0 ? "Remover mapeamento (CC " + juce::String (cc) + ")" : juce::String ("Remover mapeamento"), cc >= 0);
+    m.addItem (3, "Remover TODOS os mapeamentos MIDI");
+    m.addSeparator();
+    m.addItem (4, "Restaurar valor padrao");
+    if (proc.isMidiLearning()) m.addItem (5, "Cancelar aprendizado");
+    juce::Component::SafePointer<MoodAudioProcessorEditor> safe (this);
+    m.showMenuAsync (juce::PopupMenu::Options(), [safe, paramId] (int result)
+    {
+        if (safe != nullptr && result != 0) safe->handleMidiMenuResult (result, paramId);
+    });
+}
+
+void MoodAudioProcessorEditor::handleMidiMenuResult (int result, const juce::String& paramId)
+{
+    switch (result)
+    {
+        case 1: proc.beginMidiLearn (paramId); break;
+        case 2: proc.clearMidiMapping (paramId); statusText = "Mapeamento removido"; statusUntil = juce::Time::getMillisecondCounterHiRes() + 3000.0; break;
+        case 3: proc.clearAllMidiMappings(); statusText = "Todos os mapeamentos MIDI removidos"; statusUntil = juce::Time::getMillisecondCounterHiRes() + 3000.0; break;
+        case 4: proc.resetParamToDefault (paramId); break;
+        case 5: proc.cancelMidiLearn(); break;
+        default: break;
+    }
+    repaint (0, 36, 640, 20);
+}
+
+// ---------------------------------------------------------------------------------------------
+void MoodAudioProcessorEditor::refreshPresetList()
+{
+    presetBox.clear (juce::dontSendNotification);
+    presetEntries = proc.listPresets();
+    bool headF = false, headU = false;
+    for (size_t i = 0; i < presetEntries.size(); ++i)
+    {
+        if (presetEntries[i].factory && ! headF) { presetBox.addSectionHeading ("Factory"); headF = true; }
+        if (! presetEntries[i].factory && ! headU) { presetBox.addSectionHeading ("User"); headU = true; }
+        presetBox.addItem (presetEntries[i].name, (int) i + 1);
+    }
+    presetBox.setText (proc.getCurrentPresetName(), juce::dontSendNotification);
+    shownPreset = proc.getCurrentPresetName();
+}
+
+void MoodAudioProcessorEditor::syncPresetBox()
+{
+    const auto name = proc.getCurrentPresetName();
+    if (name != shownPreset)
+    {
+        shownPreset = name;
+        if (! presetBox.hasKeyboardFocus (true)) presetBox.setText (name, juce::dontSendNotification);
+    }
+}
+
+void MoodAudioProcessorEditor::timerCallback()
+{
+    const auto& t = proc.getTelemetry();
+    meterIn = juce::jmax (t.inPeak.load(), meterIn * 0.88f);
+    meterOut = juce::jmax (t.outPeak.load(), meterOut * 0.88f);
+    const double now = juce::Time::getMillisecondCounterHiRes();
+    if (t.limitHits.load() > 0) limitHoldUntil = now + 500.0;
+    syncPresetBox();
+
+    const bool learning = proc.isMidiLearning();
+    if (learning)
+    {
+        lastLearnName = proc.getParamDisplayName (proc.getLearningParamId());
+        statusText = "MIDI LEARN: mova um knob / botao / fader do seu controlador para \"" + lastLearnName + "\"";
+        statusUntil = now + 1.0e9;
+    }
+    else if (wasLearning)
+    {
+        const int cc = proc.getLastLearnedCC();
+        statusText = cc >= 0 ? "Mapeado: \"" + lastLearnName + "\"  <-  CC " + juce::String (cc) : juce::String ("Aprendizado cancelado");
+        statusUntil = now + 5000.0;
+    }
+    else if (now > statusUntil) statusText = kTip;
+    wasLearning = learning;
+
+    repaint (0, 690 + kDy, kW, 50);   // LEDs
+    repaint (150, 202, 215, 26);      // medidores
+    repaint (0, 36, 640, 20);         // status
+}
 
 void MoodAudioProcessorEditor::resized()
 {
+    // cabecalho
+    presetBox.setBounds (190, 8, 220, 26);
+    prevBtn.setBounds (416, 8, 28, 26);
+    nextBtn.setBounds (448, 8, 28, 26);
+    saveBtn.setBounds (482, 8, 56, 26);
+    delBtn.setBounds (542, 8, 44, 26);
+    dirBtn.setBounds (590, 8, 44, 26);
+    hiddenBtn.setBounds (640, 8, 140, 26);
+    trueBypassBtn.setBounds (650, 36, 130, 22);
+
     // dip switches
     for (int i = 0; i < 8; ++i)
     {
-        dipCfg[i].setBounds (30 + i * 40, 58, 40, 62);
-        dipRamp[i].setBounds (400 + i * 40, 58, 40, 62);
+        dipCfg[i].setBounds (30 + i * 40, 76, 40, 62);
+        dipRamp[i].setBounds (400 + i * 40, 76, 40, 62);
     }
-    // linha de controles extras
-    swCtrl.setBounds (24, 124, 110, 50);
-    expSlider.setBounds (210, 140, 150, 22);
-    kRampSpeed.setBounds (380, 118, 80, 66);
-    kDegrade.setBounds (480, 118, 80, 66);
-    outSlider.setBounds (580, 140, 150, 22);
-    trueBypassBtn.setBounds (470, 8, 130, 26);
-    hiddenBtn.setBounds (620, 8, 160, 28);
-    resetHiddenBtn.setBounds (640, 196, 130, 26);
 
-    // painel do pedal
+    // faixa de extras
+    swCtrl.setBounds (24, 162, 110, 52);
+    sExp.setBounds (150, 152, 205, 22);
+    sRamp.setBounds (150, 178, 205, 22);
+    sIn.setBounds (365, 152, 205, 22);
+    sOut.setBounds (365, 178, 205, 22);
+    sLowCut.setBounds (365, 204, 205, 22);
+    sDegrade.setBounds (580, 152, 200, 22);
+    sNoise.setBounds (580, 178, 200, 22);
+    resetHiddenBtn.setBounds (640, 196 + kDy, 130, 26);
+
+    // corpo do pedal
     const int cxL = 170, cxC = 400, cxR = 630;
     const juce::Rectangle<int> kb (0, 0, 118, 132);
-    kTime.setBounds (kb.withCentre ({ cxL, 310 })); hWidth.setBounds (kb.withCentre ({ cxL, 310 }));
-    kMix.setBounds (kb.withCentre ({ cxC, 310 }));  hRampWave.setBounds (kb.withCentre ({ cxC, 310 }));
-    kLength.setBounds (kb.withCentre ({ cxR, 310 })); hFade.setBounds (kb.withCentre ({ cxR, 310 }));
-    kWetMod.setBounds (kb.withCentre ({ cxL, 480 })); hTone.setBounds (kb.withCentre ({ cxL, 480 }));
-    kLoopMod.setBounds (kb.withCentre ({ cxR, 480 })); hDirect.setBounds (kb.withCentre ({ cxR, 480 }));
+    kTime.setBounds (kb.withCentre ({ cxL, 310 + kDy }));   hWidth.setBounds (kb.withCentre ({ cxL, 310 + kDy }));
+    kMix.setBounds (kb.withCentre ({ cxC, 310 + kDy }));    hRampWave.setBounds (kb.withCentre ({ cxC, 310 + kDy }));
+    kLength.setBounds (kb.withCentre ({ cxR, 310 + kDy })); hFade.setBounds (kb.withCentre ({ cxR, 310 + kDy }));
+    kWetMod.setBounds (kb.withCentre ({ cxL, 480 + kDy })); hTone.setBounds (kb.withCentre ({ cxL, 480 + kDy }));
+    kLoopMod.setBounds (kb.withCentre ({ cxR, 480 + kDy })); hDirect.setBounds (kb.withCentre ({ cxR, 480 + kDy }));
     const juce::Rectangle<int> big (0, 0, 156, 170);
-    kClock.setBounds (big.withCentre ({ cxC, 490 })); hBalance.setBounds (big.withCentre ({ cxC, 490 }));
+    kClock.setBounds (big.withCentre ({ cxC, 490 + kDy })); hBalance.setBounds (big.withCentre ({ cxC, 490 + kDy }));
 
     const juce::Rectangle<int> sw (0, 0, 130, 78);
-    swWet.setBounds (sw.withCentre ({ cxL, 618 })); hSync.setBounds (sw.withCentre ({ cxL, 618 }));
-    swRoute.setBounds (sw.withCentre ({ cxC, 618 })); hSpreadSolo.setBounds (sw.withCentre ({ cxC, 618 }));
-    swLoop.setBounds (sw.withCentre ({ cxR, 618 })); hLoopLen.setBounds (sw.withCentre ({ cxR, 618 }));
+    swWet.setBounds (sw.withCentre ({ cxL, 618 + kDy }));   hSync.setBounds (sw.withCentre ({ cxL, 618 + kDy }));
+    swRoute.setBounds (sw.withCentre ({ cxC, 618 + kDy })); hSpreadSolo.setBounds (sw.withCentre ({ cxC, 618 + kDy }));
+    swLoop.setBounds (sw.withCentre ({ cxR, 618 + kDy }));  hLoopLen.setBounds (sw.withCentre ({ cxR, 618 + kDy }));
 
-    fsWet.setBounds (juce::Rectangle<int> (0, 0, 96, 96).withCentre ({ 250, 800 }));
-    fsLoop.setBounds (juce::Rectangle<int> (0, 0, 96, 96).withCentre ({ 550, 800 }));
-    swPreset.setBounds (juce::Rectangle<int> (0, 0, 110, 70).withCentre ({ 410, 770 }));
-    saveL.setBounds (335, 828, 62, 24);
-    saveR.setBounds (405, 828, 62, 24);
+    fsWet.setBounds (juce::Rectangle<int> (0, 0, 96, 96).withCentre ({ 250, 800 + kDy }));
+    fsLoop.setBounds (juce::Rectangle<int> (0, 0, 96, 96).withCentre ({ 550, 800 + kDy }));
+    swPreset.setBounds (juce::Rectangle<int> (0, 0, 110, 70).withCentre ({ 410, 770 + kDy }));
+    saveL.setBounds (335, 828 + kDy, 62, 24);
+    saveR.setBounds (405, 828 + kDy, 62, 24);
 }
 
 void MoodAudioProcessorEditor::drawLed (juce::Graphics& g, float cx, float cy, juce::Colour c, bool on) const
@@ -186,61 +331,80 @@ void MoodAudioProcessorEditor::paint (juce::Graphics& g)
 {
     g.fillAll (kCream);
 
-    // ---- cabeçalho ----
+    // ---- cabecalho ----
     g.setColour (kInk);
-    g.setFont (26.f);
-    g.drawText ("MOOD  MKII", 24, 6, 260, 32, juce::Justification::centredLeft);
+    g.setFont (24.f);
+    g.drawText ("MOOD  MKII", 24, 6, 170, 30, juce::Justification::centredLeft);
     g.setFont (11.f);
-    g.setColour (kInk.withAlpha (0.7f));
-    g.drawText ("estudo de DSP - recriacao nao oficial (Chase Bliss / Drolo FX / Old Blood Noise)", 24, 36, 440, 14, juce::Justification::centredLeft);
+    g.setColour (kInk.withAlpha (0.8f));
+    g.drawText (statusText, 24, 38, 620, 16, juce::Justification::centredLeft);
 
     // ---- bancos de dip switches ----
     auto bank = [&] (int x, const char* title)
     {
         g.setColour (kRed);
-        g.fillRoundedRectangle ((float) x - 8.f, 54.f, 8.f * 40.f + 16.f, 70.f, 6.f);
+        g.fillRoundedRectangle ((float) x - 8.f, 72.f, 8.f * 40.f + 16.f, 70.f, 6.f);
         g.setColour (kInk);
         g.setFont (10.f);
-        g.drawText (title, x - 8, 38 + 0, 8 * 40 + 16, 14, juce::Justification::centredLeft);
+        g.drawText (title, x - 8, 59, 8 * 40 + 16, 12, juce::Justification::centredLeft);
     };
     bank (30, "DIP SWITCHES - CONFIG");
     bank (400, "DIP SWITCHES - RAMPING / EXTERNAL CONTROL");
 
+    // ---- faixa de extras: rotulos + medidores ----
     g.setColour (kInk);
+    g.setFont (10.f);
+    g.drawText ("CONTROL SOURCE", 24, 148, 120, 12, juce::Justification::centredLeft);
     g.setFont (11.f);
-    g.drawText ("CONTROL", 24, 112, 90, 12, juce::Justification::centredLeft);
-    g.drawText ("EXP / CV", 210, 122, 100, 14, juce::Justification::centredLeft);
-    g.drawText ("OUT (dB)", 580, 122, 100, 14, juce::Justification::centredLeft);
+    const float mdb[2] = { meterIn, meterOut };
+    const char* mlab[2] = { "IN", "OUT" };
+    for (int i = 0; i < 2; ++i)
+    {
+        const juce::Rectangle<float> r (186.f, 204.f + (float) i * 11.f, 128.f, 8.f);
+        g.setColour (kInk.withAlpha (0.16f));
+        g.fillRoundedRectangle (r, 3.f);
+        const float dbv = 20.f * std::log10 (juce::jmax (mdb[i], 1.0e-5f));
+        const float frac = juce::jlimit (0.f, 1.f, (dbv + 48.f) / 54.f);
+        g.setColour (dbv > 0.f ? kRed : (dbv > -6.f ? juce::Colour (0xffffb347) : juce::Colour (0xff39d353)));
+        g.fillRoundedRectangle (r.withWidth (r.getWidth() * frac), 3.f);
+        g.setColour (kInk);
+        g.drawText (mlab[i], 150, (int) r.getY() - 3, 34, 14, juce::Justification::centredLeft);
+    }
+    const bool limiting = juce::Time::getMillisecondCounterHiRes() < limitHoldUntil;
+    drawLed (g, 342.f, 214.f, kRed, limiting);
+    g.setColour (kInk);
+    g.setFont (9.f);
+    g.drawText ("LIMIT", 328, 224, 30, 10, juce::Justification::centred);
 
     // ---- corpo do pedal ----
-    const juce::Rectangle<float> body (20.f, 184.f, 760.f, 704.f);
-    juce::ColourGradient bg (hiddenOn ? kPlum.brighter (0.2f) : kBodyHi, 400.f, 184.f, hiddenOn ? kPlum : kBody, 400.f, 888.f, false);
+    const juce::Rectangle<float> body (20.f, 240.f, 760.f, 704.f);
+    juce::ColourGradient bg (hiddenOn ? kPlum.brighter (0.2f) : kBodyHi, 400.f, 240.f, hiddenOn ? kPlum : kBody, 400.f, 944.f, false);
     g.setGradientFill (bg);
     g.fillRoundedRectangle (body, 22.f);
     g.setColour (kInk);
     g.drawRoundedRectangle (body, 22.f, 2.f);
 
-    // motivo dos dois círculos (canal wet = escuro, looper = rosa)
+    // motivo dos dois circulos (canal wet = escuro, looper = rosa)
     g.setColour (juce::Colour (0x40361340));
-    g.fillEllipse (255.f, 690.f, 190.f, 190.f);
+    g.fillEllipse (255.f, (float) (690 + kDy), 190.f, 190.f);
     g.setColour (juce::Colour (0x40ffd6e2));
-    g.fillEllipse (355.f, 690.f, 190.f, 190.f);
+    g.fillEllipse (355.f, (float) (690 + kDy), 190.f, 190.f);
 
     g.setColour (juce::Colours::white.withAlpha (0.9f));
     g.setFont (30.f);
-    g.drawText (hiddenOn ? "HIDDEN OPTIONS" : "M  O  O  D", 200, 196, 400, 40, juce::Justification::centred);
+    g.drawText (hiddenOn ? "HIDDEN OPTIONS" : "M  O  O  D", 200, 252, 400, 40, juce::Justification::centred);
     g.setFont (11.f);
-    g.drawText (hiddenOn ? "no pedal: segure os dois footswitches" : "MKII", 200, 232, 400, 16, juce::Justification::centred);
+    g.drawText (hiddenOn ? "no pedal: segure os dois footswitches" : "MKII", 200, 288, 400, 16, juce::Justification::centred);
 
-    // rótulos dos toggles
+    // rotulos dos toggles
     g.setColour (kInk);
     g.setFont (11.f);
     const char* capN[3] = { "WET MODE", "ROUTING", "LOOP MODE" };
     const char* capH[3] = { "SYNC", "SPREAD SOLO", "LOOP LENGTH" };
     const int cx[3] = { 170, 400, 630 };
     for (int i = 0; i < 3; ++i)
-        g.drawText (hiddenOn ? capH[i] : capN[i], cx[i] - 65, 568, 130, 14, juce::Justification::centred);
-    g.drawText ("PRESET", 355, 722, 110, 14, juce::Justification::centred);
+        g.drawText (hiddenOn ? capH[i] : capN[i], cx[i] - 65, 568 + kDy, 130, 14, juce::Justification::centred);
+    g.drawText ("PRESET", 355, 722 + kDy, 110, 14, juce::Justification::centred);
 
     // marcas do knob CLOCK
     if (! hiddenOn)
@@ -264,9 +428,9 @@ void MoodAudioProcessorEditor::paint (juce::Graphics& g)
     const double now = juce::Time::getMillisecondCounterHiRes() * 0.001;
     const double per = juce::jmax (0.05, (double) t.loopPeriod.load());
     const bool blinkOn = std::fmod (now, per) < 0.12;
-    drawLed (g, 250.f, 712.f, frozen ? juce::Colour (0xffffffff) : kRed, wetOn);
+    drawLed (g, 250.f, (float) (712 + kDy), frozen ? juce::Colour (0xffffffff) : kRed, wetOn);
     const int sel = (int) std::lround (proc.apvts.getRawParameterValue (ids::presetSel)->load());
-    drawLed (g, 410.f, 706.f, juce::Colour (0xffffb347), sel != 1);
-    if (ls == 0) drawLed (g, 550.f, 712.f, juce::Colours::white, blinkOn);
-    else drawLed (g, 550.f, 712.f, ls == 1 ? juce::Colour (0xff39d353) : kRed, true);
+    drawLed (g, 410.f, (float) (706 + kDy), juce::Colour (0xffffb347), sel != 1);
+    if (ls == 0) drawLed (g, 550.f, (float) (712 + kDy), juce::Colours::white, blinkOn);
+    else drawLed (g, 550.f, (float) (712 + kDy), ls == 1 ? juce::Colour (0xff39d353) : kRed, true);
 }
