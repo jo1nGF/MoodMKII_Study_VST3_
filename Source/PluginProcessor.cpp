@@ -191,19 +191,23 @@ bool MoodAudioProcessor::saveRecording (const juce::File& destination, bool asMp
     if (! writer) { error = "Falha ao iniciar o gravador WAV."; return false; }
 
     constexpr int chunkSize = 2048;
-    std::vector<float> left ((size_t) chunkSize), right ((size_t) chunkSize);
-    float* channels[2] = { left.data(), right.data() };
+    juce::AudioBuffer<float> writeBuffer (recordingChannels, chunkSize);
     int offset = 0;
     while (offset < samples)
     {
         const int count = juce::jmin (chunkSize, samples - offset);
+        auto* left = writeBuffer.getWritePointer (0);
+        auto* right = writeBuffer.getWritePointer (1);
         for (int i = 0; i < count; ++i)
         {
             const size_t at = (size_t) (offset + i) * 2u;
-            left[(size_t) i] = (float) recordingData[at] / 32768.0f;
-            right[(size_t) i] = (float) recordingData[at + 1u] / 32768.0f;
+            left[i] = (float) recordingData[at] / 32768.0f;
+            right[i] = (float) recordingData[at + 1u] / 32768.0f;
         }
-        if (! writer->write (channels, count)) { writer.reset(); wavFile.deleteFile(); error = "Erro ao gravar o WAV."; return false; }
+        // AudioFormatWriter::write() expects integer sample pointers in this JUCE API.
+        // This helper safely converts the float AudioBuffer to the writer's sample format.
+        if (! writer->writeFromAudioSampleBuffer (writeBuffer, 0, count))
+        { writer.reset(); wavFile.deleteFile(); error = "Erro ao gravar o WAV."; return false; }
         offset += count;
     }
     writer.reset();

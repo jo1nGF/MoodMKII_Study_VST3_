@@ -120,3 +120,8 @@ Ruído que cresce com a queda do CLOCK · loop que se degrada a cada passada (fi
 5. Algoritmos internos: o reverb real é da OBNE e o looper da Drolo; aqui são implementações próprias a partir do comportamento descrito.
 6. **Não implementado**: o mapa de CCs *oficial* do pedal e o clock sync MIDI (use o MIDI Learn), entrada CV/expressão físicas (use `exp_cv`), qualidade "Classic" bit-a-bit, gestos de 3 s do pedal.
 7. A camada JUCE (`Source/Plugin*`) **não foi compilada no ambiente onde foi escrita** (sem JUCE/Windows/rede); o núcleo DSP foi compilado e testado (ASan/UBSan). Se o compilador reclamar de algo no JUCE, corrija e siga — a lógica não depende disso.
+
+
+## Gravador de saída
+
+Os botões REC, STOP, SALVAR WAV e SALVAR MP3 ficam na faixa dedicada logo abaixo dos seletores REVERB/ROUTING/LOOP MODE, dentro da área principal do pedal. O gravador captura a saída estéreo processada do plugin por até 180 segundos. WAV é PCM 16-bit; MP3 usa 128 kbps e requer o executável LAME disponível no PATH do sistema.

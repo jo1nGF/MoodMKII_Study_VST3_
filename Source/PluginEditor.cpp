@@ -427,10 +427,10 @@ void MoodAudioProcessorEditor::resized()
     saveR.setBounds (405, 828 + kDy, 62, 24);
 
     // Gravador independente do looper interno: captura a saída estéreo processada.
-    recordBtn.setBounds (120, 966, 92, 30);
-    stopRecBtn.setBounds (220, 966, 82, 30);
-    wavExportBtn.setBounds (330, 966, 130, 30);
-    mp3ExportBtn.setBounds (470, 966, 130, 30);
+    recordBtn.setBounds (145, 738, 82, 28);
+    stopRecBtn.setBounds (235, 738, 76, 28);
+    wavExportBtn.setBounds (325, 738, 130, 28);
+    mp3ExportBtn.setBounds (465, 738, 130, 28);
 }
 
 void MoodAudioProcessorEditor::drawLed (juce::Graphics& g, float cx, float cy, juce::Colour c, bool on) const
@@ -450,10 +450,10 @@ void MoodAudioProcessorEditor::paint (juce::Graphics& g)
 {
     g.fillAll (kCream);
     g.setColour (juce::Colour (0xffeaddea));
-    g.fillRoundedRectangle (92.f, 954.f, 616.f, 56.f, 8.f);
+    g.fillRoundedRectangle (118.f, 716.f, 564.f, 58.f, 8.f);
     g.setColour (kInk);
     g.setFont (10.f);
-    g.drawText ("GRAVADOR DE SAÍDA  •  WAV 16-bit / MP3 128 kbps", 92, 940, 616, 14, juce::Justification::centred);
+    g.drawText ("GRAVADOR DE SAÍDA  •  WAV 16-bit / MP3 128 kbps", 118, 720, 564, 14, juce::Justification::centred);
 
     // ---- cabecalho ----
     g.setColour (kInk);
