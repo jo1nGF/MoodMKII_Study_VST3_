@@ -28,6 +28,7 @@ struct EngineParams
     bool rampTime = false, rampWetModify = false, rampClock = false, rampLoopModify = false, rampLength = false;
     bool bounce = true, sweepTop = true, rise = true;
     float rampSpeed = 0.5f;
+    float rampAtten = 1.0f;    // 0 = sem modulação ... 1 = amplitude total do ramp
     int ctrlSource = 0;      // 0 = ramping interno, 1 = expressão/CV
     float expValue = 0.f;    // posição do pedal de expressão / CV (0..1)
     // ---- hidden options ----

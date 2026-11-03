@@ -37,6 +37,16 @@ struct MoodLookAndFeel : public juce::LookAndFeel_V4
     }
 };
 
+// Slider que ignora o botão direito (reservado ao menu de MIDI Learn)
+class MidiLearnSlider : public juce::Slider
+{
+public:
+    using juce::Slider::Slider;
+    void mouseDown (const juce::MouseEvent& e) override { if (! e.mods.isPopupMenu()) juce::Slider::mouseDown (e); }
+    void mouseUp   (const juce::MouseEvent& e) override { if (! e.mods.isPopupMenu()) juce::Slider::mouseUp (e); }
+    void mouseDrag (const juce::MouseEvent& e) override { if (! e.mods.isPopupMenu()) juce::Slider::mouseDrag (e); }
+};
+
 class KnobComp : public juce::Component
 {
 public:
@@ -67,7 +77,7 @@ public:
         g.drawText (slider.getTextFromValue (slider.getValue()), r, juce::Justification::centred);
     }
 
-    juce::Slider slider;
+    MidiLearnSlider slider;
 
 private:
     juce::String label;
@@ -100,7 +110,7 @@ public:
         g.drawText (label, getLocalBounds().withWidth (lw), juce::Justification::centredLeft);
     }
 
-    juce::Slider slider;
+    MidiLearnSlider slider;
 
 private:
     juce::String label;
@@ -217,6 +227,7 @@ class FootSwitchComp : public juce::Component, private juce::Timer
 {
 public:
     std::function<void()> onPress, onRelease;
+    std::function<void()> onRightClick;   // menu de contexto (freeze, etc.)
     ~FootSwitchComp() override { stopTimer(); }
 
     void paint (juce::Graphics& g) override
@@ -242,7 +253,7 @@ public:
     }
     void mouseDown (const juce::MouseEvent& e) override
     {
-        if (e.mods.isPopupMenu()) return;
+        if (e.mods.isPopupMenu()) { if (onRightClick) onRightClick(); return; }
         down = true; held = false;
         downMs = juce::Time::getMillisecondCounter();
         startTimerHz (30);
@@ -283,6 +294,7 @@ private:
     void setFs (const char* id, bool pressed);
     void drawLed (juce::Graphics& g, float cx, float cy, juce::Colour c, bool on) const;
     void showMidiMenu (const juce::String& paramId);
+    void showFootswitchMenu (int which);
     void handleMidiMenuResult (int result, const juce::String& paramId);
     void refreshPresetList();
     void syncPresetBox();
@@ -300,7 +312,7 @@ private:
     ui::ChoiceSwitch hSync, hSpreadSolo, hLoopLen;
     ui::ChoiceSwitch swCtrl;
     // sliders compactos
-    ui::LabeledSlider sExp, sRamp, sIn, sOut, sLowCut, sDegrade, sNoise;
+    ui::LabeledSlider sExp, sRamp, sRampAtt, sIn, sOut, sLowCut, sDegrade, sNoise;
     // dip switches
     ui::DipSwitch dipCfg[8], dipRamp[8];
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> dipAtt[16];

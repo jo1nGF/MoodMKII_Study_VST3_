@@ -16,6 +16,7 @@ MoodAudioProcessor::MoodAudioProcessor()
     raw.rmpTime = r (ids::rmpTime); raw.rmpWetModify = r (ids::rmpWetModify); raw.rmpClock = r (ids::rmpClock);
     raw.rmpLoopModify = r (ids::rmpLoopModify); raw.rmpLength = r (ids::rmpLength); raw.rmpBounce = r (ids::rmpBounce);
     raw.rmpSweepTop = r (ids::rmpSweepTop); raw.rmpRise = r (ids::rmpRise); raw.rmpSpeed = r (ids::rmpSpeed);
+    raw.rmpAtten = r (ids::rmpAtten);
     raw.ctrlSource = r (ids::ctrlSource); raw.expCv = r (ids::expCv);
     raw.hStereoWidth = r (ids::hStereoWidth); raw.hDirectLoop = r (ids::hDirectLoop); raw.hTone = r (ids::hTone);
     raw.hFade = r (ids::hFade); raw.hBalance = r (ids::hBalance); raw.hRampWave = r (ids::hRampWave); raw.hSync = r (ids::hSync);
@@ -83,6 +84,7 @@ mood::EngineParams MoodAudioProcessor::readParams() const
     e.rampTime = b (raw.rmpTime); e.rampWetModify = b (raw.rmpWetModify); e.rampClock = b (raw.rmpClock);
     e.rampLoopModify = b (raw.rmpLoopModify); e.rampLength = b (raw.rmpLength);
     e.bounce = b (raw.rmpBounce); e.sweepTop = b (raw.rmpSweepTop); e.rise = b (raw.rmpRise); e.rampSpeed = f (raw.rmpSpeed);
+    e.rampAtten = f (raw.rmpAtten);
     e.ctrlSource = i (raw.ctrlSource); e.expValue = f (raw.expCv);
     e.stereoWidth = f (raw.hStereoWidth); e.directLoop = f (raw.hDirectLoop); e.tone = f (raw.hTone); e.fade = f (raw.hFade);
     e.balance = f (raw.hBalance); e.rampWaveform = f (raw.hRampWave);

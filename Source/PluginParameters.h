@@ -42,6 +42,7 @@ namespace ids
     inline constexpr const char* rmpSweepTop = "rmp_sweep_top";
     inline constexpr const char* rmpRise = "rmp_rise";
     inline constexpr const char* rmpSpeed = "rmp_speed";
+    inline constexpr const char* rmpAtten = "rmp_atten";
     inline constexpr const char* ctrlSource = "ctrl_source";
     inline constexpr const char* expCv = "exp_cv";
     // hidden options
@@ -78,7 +79,7 @@ inline const std::vector<const char*>& presetParamIds()
         ids::wetMode, ids::routing, ids::loopMode,
         ids::dipClassic, ids::dipMiso, ids::dipSpread, ids::dipDryKill, ids::dipTrails, ids::dipLatch, ids::dipNoDub, ids::dipSmooth,
         ids::rmpTime, ids::rmpWetModify, ids::rmpClock, ids::rmpLoopModify, ids::rmpLength, ids::rmpBounce, ids::rmpSweepTop,
-        ids::rmpRise, ids::rmpSpeed, ids::ctrlSource,
+        ids::rmpRise, ids::rmpSpeed, ids::rmpAtten, ids::ctrlSource,
         ids::hStereoWidth, ids::hDirectLoop, ids::hTone, ids::hFade, ids::hBalance, ids::hRampWave, ids::hSync, ids::hSpreadSolo, ids::hLoopLen };
     return v;
 }
@@ -160,6 +161,7 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
     addB (ids::rmpSweepTop,   "Ramp SWEEP Top (off = Bottom)", true);
     addB (ids::rmpRise,       "Ramp POLARITY Rise (off = Fall)", true);
     addF (ids::rmpSpeed,      "Ramp SPEED (MIX knob)", 0.5f);
+    addF (ids::rmpAtten,      "Ramp ATTENUATOR",       1.0f);
     addC (ids::ctrlSource,    "Control Source", StringArray { "Ramp", "EXP / CV" }, 0);
     addF (ids::expCv,         "EXP / CV", 0.f);
     // ---- hidden options ----

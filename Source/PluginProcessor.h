@@ -66,6 +66,7 @@ public:
     void clearAllMidiMappings();
     juce::String getParamDisplayName (const juce::String& paramId) const;
     void resetParamToDefault (const juce::String& paramId);
+    void setBoolParam (const char* id, bool v);
 
     const mood::MoodEngine::Telemetry& getTelemetry() const { return engine.telemetry; }
 
@@ -94,7 +95,6 @@ private:
     void fsHoldEnd (int which);
     void handleActions();
     bool getBoolParam (const char* id) const;
-    void setBoolParam (const char* id, bool v);
 
     void forceLiveSelection();
     void resetUserParamsToDefault();
@@ -108,7 +108,7 @@ private:
         std::atomic<float> *wetMode, *routing, *loopMode;
         std::atomic<float> *wetOn, *wetFreeze, *loopOn, *loopOverdub;
         std::atomic<float> *dipClassic, *dipMiso, *dipSpread, *dipDryKill, *dipTrails, *dipNoDub, *dipSmooth;
-        std::atomic<float> *rmpTime, *rmpWetModify, *rmpClock, *rmpLoopModify, *rmpLength, *rmpBounce, *rmpSweepTop, *rmpRise, *rmpSpeed;
+        std::atomic<float> *rmpTime, *rmpWetModify, *rmpClock, *rmpLoopModify, *rmpLength, *rmpBounce, *rmpSweepTop, *rmpRise, *rmpSpeed, *rmpAtten;
         std::atomic<float> *ctrlSource, *expCv;
         std::atomic<float> *hStereoWidth, *hDirectLoop, *hTone, *hFade, *hBalance, *hRampWave, *hSync, *hSpreadSolo, *hLoopLen, *hTrueBypass;
         std::atomic<float> *outLevel, *inLevel, *clockDegrade, *clockNoise, *wetLowCut;

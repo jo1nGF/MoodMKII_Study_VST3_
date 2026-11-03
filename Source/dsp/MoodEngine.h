@@ -103,7 +103,7 @@ public:
             // ---- ramping (interno) ou expressão/CV (externo) ----
             float s = 0.f;
             bool modOn;
-            if (p.ctrlSource == 0) { modOn = anyKnob; if (anyKnob) s = ramper.next (p.bounce, p.rampSpeed, p.rampWaveform, p.rise, fs); }
+            if (p.ctrlSource == 0) { modOn = anyKnob; if (anyKnob) s = ramper.next (p.bounce, p.rampSpeed, p.rampWaveform, p.rise, fs) * clampf (p.rampAtten, 0.f, 1.f); }
             else { modOn = true; s = p.rise ? p.expValue : 1.f - p.expValue; }
             auto mod = [&] (float knob, bool sel)
             {
@@ -184,11 +184,14 @@ public:
             routingNow = p.routing; directLoop = p.directLoop; gWet = gW * duck; gLoop = gL * duck;
 
             // ---- DEGRADE: anti-alias de entrada + reconstrução de saída (passa-baixas 4ª ordem em kk * clock) ----
-            // 0 = limpo (corte em 0,4 x clock) ... 1 = bruto, sem filtro (aliasing "computer noises" do pedal).
-            // O filtro só age quando clock < sample rate do host (é aí que há decimação / imagens do ZOH).
+            // 0 = limpo, sem bitcrusher (motor roda a taxa plena do host)
+            // >0 = bitcrusher: clock limitado a 2k..8k, degrade controla aliasing (1 = bruto, sem filtro)
             const float dg = clampf (smDeg, 0.f, 1.f);
-            const float cutHz = 0.40f * std::exp2 (5.f * dg * dg) * fc;
-            const bool useAa = fc < fs && cutHz < 0.45f * fs;
+            const bool degradeActive = dg > 0.001f;
+            // Quando degrade está ativo, limita o clock efetivo de 2k a 8k para ação do bitcrusher
+            const float fcDeg = degradeActive ? clampf (fc, 2000.f, 8000.f) : fc;
+            const float cutHz = degradeActive ? (0.40f * std::exp2 (5.f * dg * dg) * fcDeg) : (0.45f * fs);
+            const bool useAa = degradeActive && fcDeg < fs && cutHz < 0.45f * fs;
             aaMix += aGain * ((useAa ? 1.f : 0.f) - aaMix);
             aaIn[0].setCutoff (cutHz, fs); aaIn[1].setCutoff (cutHz, fs);
             const float fL = aaIn[0].process (dryL), fR = aaIn[1].process (dryR);
@@ -209,9 +212,9 @@ public:
             }
             tickPhase = ph - (double) ntAll;
 
-            // ---- saída do motor: ZOH (imagens "degrau") se clock < fs; interpolação se clock >= fs ----
+            // ---- saída do motor: ZOH (imagens "degrau") se clock < fs e degrade ativo; interpolação caso contrário ----
             float yl, yr;
-            if (fc < fs) { yl = ohl[0]; yr = ohr[0]; }
+            if (fc < fs && degradeActive) { yl = ohl[0]; yr = ohr[0]; }
             else { const float t = (float) tickPhase; yl = hermite (ohl[3], ohl[2], ohl[1], ohl[0], t); yr = hermite (ohr[3], ohr[2], ohr[1], ohr[0], t); }
 
             aaOut[0].setCutoff (cutHz, fs); aaOut[1].setCutoff (cutHz, fs);

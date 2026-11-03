@@ -26,6 +26,7 @@ MoodAudioProcessorEditor::MoodAudioProcessorEditor (MoodAudioProcessor& p)
       hLoopLen (p.apvts, ids::hLoopLen, { "HALF", "FULL" }),
       swCtrl (p.apvts, ids::ctrlSource, { "RAMP", "EXP / CV" }),
       sExp (p.apvts, ids::expCv, "EXP / CV", 62), sRamp (p.apvts, ids::rmpSpeed, "RAMP SPEED", 62),
+      sRampAtt (p.apvts, ids::rmpAtten, "RAMP ATTEN", 62),
       sIn (p.apvts, ids::inLevel, "INPUT dB", 62), sOut (p.apvts, ids::outLevel, "OUTPUT dB", 62),
       sLowCut (p.apvts, ids::wetLowCut, "WET LOW CUT", 62),
       sDegrade (p.apvts, ids::clockDegrade, "DEGRADE", 62), sNoise (p.apvts, ids::clockNoise, "NOISE", 62)
@@ -36,7 +37,7 @@ MoodAudioProcessorEditor::MoodAudioProcessorEditor (MoodAudioProcessor& p)
         addAndMakeVisible (k);
     for (auto* s : { &swWet, &swRoute, &swLoop, &swPreset, &hSync, &hSpreadSolo, &hLoopLen, &swCtrl })
         addAndMakeVisible (s);
-    for (auto* s : { &sExp, &sRamp, &sIn, &sOut, &sLowCut, &sDegrade, &sNoise })
+    for (auto* s : { &sExp, &sRamp, &sRampAtt, &sIn, &sOut, &sLowCut, &sDegrade, &sNoise })
         addAndMakeVisible (s);
 
     // ---- dip switches ----
@@ -114,8 +115,10 @@ MoodAudioProcessorEditor::MoodAudioProcessorEditor (MoodAudioProcessor& p)
     // ---- footswitches: pressionar / soltar viram o parametro momentaneo (gesto decodificado no processador) ----
     fsWet.onPress = [this] { setFs (ids::fsWet, true); };
     fsWet.onRelease = [this] { setFs (ids::fsWet, false); };
+    fsWet.onRightClick = [this] { showFootswitchMenu (0); };
     fsLoop.onPress = [this] { setFs (ids::fsLoop, true); };
     fsLoop.onRelease = [this] { setFs (ids::fsLoop, false); };
+    fsLoop.onRightClick = [this] { showFootswitchMenu (1); };
     addAndMakeVisible (fsWet);
     addAndMakeVisible (fsLoop);
 
@@ -126,7 +129,7 @@ MoodAudioProcessorEditor::MoodAudioProcessorEditor (MoodAudioProcessor& p)
     reg (&hBalance, ids::hBalance); reg (&hFade, ids::hFade); reg (&hDirect, ids::hDirectLoop);
     reg (&swWet, ids::wetMode); reg (&swRoute, ids::routing); reg (&swLoop, ids::loopMode); reg (&swPreset, ids::presetSel);
     reg (&hSync, ids::hSync); reg (&hSpreadSolo, ids::hSpreadSolo); reg (&hLoopLen, ids::hLoopLen); reg (&swCtrl, ids::ctrlSource);
-    reg (&sExp, ids::expCv); reg (&sRamp, ids::rmpSpeed); reg (&sIn, ids::inLevel); reg (&sOut, ids::outLevel);
+    reg (&sExp, ids::expCv); reg (&sRamp, ids::rmpSpeed); reg (&sRampAtt, ids::rmpAtten); reg (&sIn, ids::inLevel); reg (&sOut, ids::outLevel);
     reg (&sLowCut, ids::wetLowCut); reg (&sDegrade, ids::clockDegrade); reg (&sNoise, ids::clockNoise);
     reg (&fsWet, ids::fsWet); reg (&fsLoop, ids::fsLoop); reg (&trueBypassBtn, ids::hTrueBypass);
     addMouseListener (this, true);
@@ -205,6 +208,57 @@ void MoodAudioProcessorEditor::handleMidiMenuResult (int result, const juce::Str
     repaint (0, 36, 640, 20);
 }
 
+void MoodAudioProcessorEditor::showFootswitchMenu (int which)
+{
+    const bool isWet = (which == 0);
+    const char* freezeId = isWet ? ids::wetFreeze : ids::loopOverdub;
+    const char* engageId = isWet ? ids::wetOn : ids::loopOn;
+    const juce::String title = isWet ? "WET FOOTSWITCH" : "LOOP FOOTSWITCH";
+    const juce::String freezeLabel = isWet ? "FREEZE" : "OVERDUB";
+    const bool frozen = getBool (freezeId);
+    const bool engaged = getBool (engageId);
+
+    juce::PopupMenu m;
+    m.addSectionHeader (title);
+    m.addItem (1, engaged ? "Desligar" : "Ligar");
+    m.addItem (2, (frozen ? "Desativar " : "Ativar ") + freezeLabel, engaged);
+    m.addSeparator();
+    // MIDI learn entries for the footswitch param
+    const juce::String paramId = isWet ? juce::String (ids::fsWet) : juce::String (ids::fsLoop);
+    const int cc = proc.getMappedCC (paramId);
+    m.addItem (10, "MIDI Learn (mova um controle MIDI)");
+    m.addItem (11, cc >= 0 ? "Remover mapeamento (CC " + juce::String (cc) + ")" : juce::String ("Remover mapeamento"), cc >= 0);
+
+    juce::Component::SafePointer<MoodAudioProcessorEditor> safe (this);
+    m.showMenuAsync (juce::PopupMenu::Options(), [safe, which, freezeId, engageId, paramId] (int result)
+    {
+        if (safe == nullptr || result == 0) return;
+        switch (result)
+        {
+            case 1:
+            {
+                const bool on = ! safe->getBool (engageId);
+                safe->proc.setBoolParam (engageId, on);
+                if (! on) safe->proc.setBoolParam (freezeId, false);
+                break;
+            }
+            case 2:
+                safe->proc.setBoolParam (freezeId, ! safe->getBool (freezeId));
+                break;
+            case 10:
+                safe->proc.beginMidiLearn (paramId);
+                break;
+            case 11:
+                safe->proc.clearMidiMapping (paramId);
+                safe->statusText = "Mapeamento removido";
+                safe->statusUntil = juce::Time::getMillisecondCounterHiRes() + 3000.0;
+                break;
+            default: break;
+        }
+        safe->repaint();
+    });
+}
+
 // ---------------------------------------------------------------------------------------------
 void MoodAudioProcessorEditor::refreshPresetList()
 {
@@ -257,7 +311,7 @@ void MoodAudioProcessorEditor::timerCallback()
     wasLearning = learning;
 
     repaint (0, 690 + kDy, kW, 50);   // LEDs
-    repaint (150, 202, 215, 26);      // medidores
+    repaint (150, 226, 215, 38);      // medidores
     repaint (0, 36, 640, 20);         // status
 }
 
@@ -284,6 +338,7 @@ void MoodAudioProcessorEditor::resized()
     swCtrl.setBounds (24, 162, 110, 52);
     sExp.setBounds (150, 152, 205, 22);
     sRamp.setBounds (150, 178, 205, 22);
+    sRampAtt.setBounds (150, 204, 205, 22);
     sIn.setBounds (365, 152, 205, 22);
     sOut.setBounds (365, 178, 205, 22);
     sLowCut.setBounds (365, 204, 205, 22);
@@ -360,7 +415,7 @@ void MoodAudioProcessorEditor::paint (juce::Graphics& g)
     const char* mlab[2] = { "IN", "OUT" };
     for (int i = 0; i < 2; ++i)
     {
-        const juce::Rectangle<float> r (186.f, 204.f + (float) i * 11.f, 128.f, 8.f);
+        const juce::Rectangle<float> r (186.f, 228.f + (float) i * 11.f, 128.f, 8.f);
         g.setColour (kInk.withAlpha (0.16f));
         g.fillRoundedRectangle (r, 3.f);
         const float dbv = 20.f * std::log10 (juce::jmax (mdb[i], 1.0e-5f));
@@ -371,10 +426,10 @@ void MoodAudioProcessorEditor::paint (juce::Graphics& g)
         g.drawText (mlab[i], 150, (int) r.getY() - 3, 34, 14, juce::Justification::centredLeft);
     }
     const bool limiting = juce::Time::getMillisecondCounterHiRes() < limitHoldUntil;
-    drawLed (g, 342.f, 214.f, kRed, limiting);
+    drawLed (g, 342.f, 238.f, kRed, limiting);
     g.setColour (kInk);
     g.setFont (9.f);
-    g.drawText ("LIMIT", 328, 224, 30, 10, juce::Justification::centred);
+    g.drawText ("LIMIT", 328, 248, 30, 10, juce::Justification::centred);
 
     // ---- corpo do pedal ----
     const juce::Rectangle<float> body (20.f, 240.f, 760.f, 704.f);
