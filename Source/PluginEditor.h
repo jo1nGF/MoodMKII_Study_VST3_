@@ -322,6 +322,8 @@ private:
     ui::NoRightClickToggle trueBypassBtn { "TRUE BYPASS" };
     juce::AudioProcessorValueTreeState::ButtonAttachment trueBypassAtt { proc.apvts, ids::hTrueBypass, trueBypassBtn };
     juce::TextButton hiddenBtn { "HIDDEN OPTIONS" }, saveL { "SAVE L" }, saveR { "SAVE R" }, resetHiddenBtn { "RESET HIDDEN" };
+    juce::TextButton recordBtn { "REC" }, stopRecBtn { "STOP" }, wavExportBtn { "SALVAR WAV" }, mp3ExportBtn { "SALVAR MP3" };
+    std::unique_ptr<juce::FileChooser> recordingChooser;
     // barra de presets
     juce::ComboBox presetBox;
     juce::TextButton prevBtn { "<" }, nextBtn { ">" }, saveBtn { "SAVE" }, delBtn { "DEL" }, dirBtn { "DIR" };

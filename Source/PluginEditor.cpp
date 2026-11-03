@@ -4,7 +4,7 @@ using namespace ui;
 
 namespace
 {
-constexpr int kW = 800, kH = 960, kDy = 56;   // kDy: deslocamento do corpo do pedal (cabecalho + dips + extras ficam acima)
+constexpr int kW = 800, kH = 1020, kDy = 56;   // kDy: deslocamento do corpo do pedal (cabecalho + dips + extras ficam acima)
 const char* const kClockLabels[11] = { "2k", "3k", "4k", "6k", "8k", "12k", "16k", "24k", "32k", "48k", "64k" };
 const char* const kTip = "Botao direito em qualquer controle = MIDI Learn   |   Presets: digite um nome na caixa e clique SAVE";
 }
@@ -63,6 +63,56 @@ MoodAudioProcessorEditor::MoodAudioProcessorEditor (MoodAudioProcessor& p)
     addAndMakeVisible (saveL);
     addAndMakeVisible (saveR);
     addAndMakeVisible (resetHiddenBtn);
+    for (auto* b : { &recordBtn, &stopRecBtn, &wavExportBtn, &mp3ExportBtn })
+        addAndMakeVisible (*b);
+    recordBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xffb82f50));
+    stopRecBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff55515d));
+    wavExportBtn.setColour (juce::TextButton::buttonColourId, kPlum);
+    mp3ExportBtn.setColour (juce::TextButton::buttonColourId, kPlum);
+    recordBtn.setTooltip ("Grava a saída processada do plugin (máximo de 180 segundos).");
+    wavExportBtn.setTooltip ("Exporta WAV PCM 16-bit.");
+    mp3ExportBtn.setTooltip ("Exporta MP3 128 kbit/s; requer LAME instalado no PATH.");
+    recordBtn.onClick = [this]
+    {
+        if (proc.startRecording())
+        {
+            statusText = "Gravando a saída do plugin..."; statusUntil = juce::Time::getMillisecondCounterHiRes() + 1.0e9;
+        }
+        else { statusText = "Gravador indisponível: reproduza o áudio para inicializar o plugin."; statusUntil = juce::Time::getMillisecondCounterHiRes() + 5000.0; }
+    };
+    stopRecBtn.onClick = [this]
+    {
+        proc.stopRecording();
+        statusText = "Gravação parada: " + juce::String (proc.getRecordedSamples()) + " amostras.";
+        statusUntil = juce::Time::getMillisecondCounterHiRes() + 5000.0;
+    };
+    auto chooseRecordingFile = [this] (bool mp3)
+    {
+        if (proc.isRecording()) proc.stopRecording();
+        if (proc.getRecordedSamples() <= 0)
+        {
+            statusText = "Grave algum áudio antes de exportar."; statusUntil = juce::Time::getMillisecondCounterHiRes() + 4000.0; return;
+        }
+        const auto ext = mp3 ? ".mp3" : ".wav";
+        recordingChooser = std::make_unique<juce::FileChooser> ("Salvar gravação", juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("MOOD-loop" + juce::String (ext)), "*" + juce::String (ext));
+        juce::Component::SafePointer<MoodAudioProcessorEditor> safe (this);
+        recordingChooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles,
+            [safe, mp3] (const juce::FileChooser& chooser)
+            {
+                if (safe == nullptr) return;
+                const auto file = chooser.getResult();
+                if (file == juce::File()) return;
+                juce::String error;
+                if (safe->proc.saveRecording (file.withFileExtension (mp3 ? ".mp3" : ".wav"), mp3, error))
+                {
+                    safe->statusText = "Gravação salva: " + file.getFileName(); 
+                }
+                else safe->statusText = error;
+                safe->statusUntil = juce::Time::getMillisecondCounterHiRes() + 8000.0;
+            });
+    };
+    wavExportBtn.onClick = [chooseRecordingFile] { chooseRecordingFile (false); };
+    mp3ExportBtn.onClick = [chooseRecordingFile] { chooseRecordingFile (true); };
     hiddenBtn.setClickingTogglesState (true);
     hiddenBtn.onClick = [this] { setHiddenVisible (hiddenBtn.getToggleState()); };
     saveL.onClick = [this] { proc.savePresetSlot (0); };
@@ -293,6 +343,14 @@ void MoodAudioProcessorEditor::timerCallback()
     const double now = juce::Time::getMillisecondCounterHiRes();
     if (t.limitHits.load() > 0) limitHoldUntil = now + 500.0;
     syncPresetBox();
+    recordBtn.setEnabled (! proc.isRecording());
+    stopRecBtn.setEnabled (proc.isRecording());
+    if (proc.isRecording())
+    {
+        const double seconds = (double) proc.getRecordedSamples() / juce::jmax (1.0, proc.getRecordingSampleRate());
+        recordBtn.setButtonText ("REC " + juce::String (seconds, 1) + "s");
+    }
+    else recordBtn.setButtonText ("REC");
 
     const bool learning = proc.isMidiLearning();
     if (learning)
@@ -367,6 +425,12 @@ void MoodAudioProcessorEditor::resized()
     swPreset.setBounds (juce::Rectangle<int> (0, 0, 110, 70).withCentre ({ 410, 770 + kDy }));
     saveL.setBounds (335, 828 + kDy, 62, 24);
     saveR.setBounds (405, 828 + kDy, 62, 24);
+
+    // Gravador independente do looper interno: captura a saída estéreo processada.
+    recordBtn.setBounds (120, 966, 92, 30);
+    stopRecBtn.setBounds (220, 966, 82, 30);
+    wavExportBtn.setBounds (330, 966, 130, 30);
+    mp3ExportBtn.setBounds (470, 966, 130, 30);
 }
 
 void MoodAudioProcessorEditor::drawLed (juce::Graphics& g, float cx, float cy, juce::Colour c, bool on) const
@@ -385,6 +449,11 @@ void MoodAudioProcessorEditor::drawLed (juce::Graphics& g, float cx, float cy, j
 void MoodAudioProcessorEditor::paint (juce::Graphics& g)
 {
     g.fillAll (kCream);
+    g.setColour (juce::Colour (0xffeaddea));
+    g.fillRoundedRectangle (92.f, 954.f, 616.f, 56.f, 8.f);
+    g.setColour (kInk);
+    g.setFont (10.f);
+    g.drawText ("GRAVADOR DE SAÍDA  •  WAV 16-bit / MP3 128 kbps", 92, 940, 616, 14, juce::Justification::centred);
 
     // ---- cabecalho ----
     g.setColour (kInk);

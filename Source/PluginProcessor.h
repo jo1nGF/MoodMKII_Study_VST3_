@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <array>
+#include <cstdint>
 #include <atomic>
 #include <vector>
 #include "PluginParameters.h"
@@ -68,6 +69,14 @@ public:
     void resetParamToDefault (const juce::String& paramId);
     void setBoolParam (const char* id, bool v);
 
+    // Gravador da saída processada: PCM 16-bit, até 180 segundos.
+    bool startRecording();
+    void stopRecording();
+    bool isRecording() const { return recording.load(); }
+    int getRecordedSamples() const { return recordedSamples.load(); }
+    double getRecordingSampleRate() const { return recordingSampleRate; }
+    bool saveRecording (const juce::File& destination, bool asMp3, juce::String& error);
+
     const mood::MoodEngine::Telemetry& getTelemetry() const { return engine.telemetry; }
 
     juce::AudioProcessorValueTreeState apvts;
@@ -118,6 +127,14 @@ private:
     mood::MoodEngine engine;
     std::vector<float> scratchR;
     float lastOutGain = 1.f, lastInGain = 1.f;
+
+    // Buffer intercalado int16 para manter o consumo de memória baixo.
+    std::vector<int16_t> recordingData;
+    int recordingCapacity = 0;
+    std::atomic<int> recordedSamples { 0 };
+    std::atomic<bool> recording { false };
+    double recordingSampleRate = 44100.0;
+    int recordingChannels = 2;
 
     // slots Left / Right + snapshot de "Live"
     juce::String slot[2], liveSnapshot;

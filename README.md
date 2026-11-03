@@ -88,6 +88,16 @@ LEDs: wet (vermelho; branco = freeze) · preset (âmbar) · loop (pisca no ritmo
 * **Gestos do footswitch como parâmetros momentâneos**: `fs_wet` e `fs_loop` (≥ 50 % = pressionado): toque curto = tap; segurar > 450 ms = hold (freeze / overdub; com LATCH alterna). A decodificação fica no plugin, então um botão de controlador mapeado nesses parâmetros se comporta exatamente como o pedal. Ações: `act_save_left`, `act_save_right`, `act_prev_preset`, `act_next_preset` (disparam na subida).
 * **MIDI Learn embutido (funciona até no Standalone)**: **botão direito em qualquer controle** ▸ *MIDI Learn* ▸ mova um knob/botão do controlador. Vale para qualquer CC (0–127), um CC por parâmetro; o mapeamento é salvo no projeto/estado. Menu também: remover mapeamento, remover todos, restaurar padrão. No Standalone, habilite sua entrada MIDI em *Options* (engrenagem). O plugin declara entrada MIDI (VST3 efeito); em DAWs que não roteiam MIDI para efeitos, use o mapeamento da própria DAW sobre os parâmetros.
 
+### 3d. Gravador / exportação de áudio
+
+Na faixa inferior da GUI:
+* **REC** começa a capturar a saída estéreo processada do plugin (inclui o loop, wet e dry conforme o MIX/roteamento).
+* **STOP** encerra a captura. A gravação também para automaticamente ao atingir 180 segundos.
+* **SALVAR WAV** exporta PCM 16-bit na taxa de amostragem do projeto/host.
+* **SALVAR MP3** exporta em 128 kbit/s (qualidade média, arquivo menor). Para codificar MP3, é necessário instalar o encoder **LAME** e deixar o executável `lame` disponível no `PATH` do Windows. Se o LAME não estiver disponível, o plugin informa o erro; o WAV continua funcionando sem dependências extras.
+
+O gravador usa armazenamento temporário PCM 16-bit (até 180 s) e não altera o áudio do plugin nem o estado do looper. Para salvar uma frase curta, inicie REC antes de tocar e use STOP assim que terminar.
+
 ## 4. Como o motor funciona
 
 * **CLOCK = taxa de amostragem do motor.** O motor roda a `fc` (2–64 kHz) via acumulador de fase; quando `fc < fs` a entrada é decimada e a saída é *zero-order hold* — daí o aliasing/"computer noises". O **DEGRADE** põe um passa-baixas Butterworth de 4ª ordem na entrada (anti-alias) e na saída (reconstrução) com corte em `0,4·2^(5·d²)·clock` (d = DEGRADE): o padrão de 10 % deixa o aliasing ~20 dB abaixo do bruto (medido: a 2 kHz vai de +1 dB para −18 dB de energia inarmônica/harmônica), 100 % = sem filtro. O **NOISE** é gerado na taxa do clock (textura digital) e passa pelo filtro de reconstrução: ~−54 dBFS a 2 kHz, ~−65 dBFS a 16 kHz, zero a 64 kHz. Com `clock ≥ fs` (48k/64k) nenhum filtro atua. Tudo (delay, reverb, loop) é medido em *amostras do clock*, então mexer no CLOCK escala tempo e pitch de wet e loop juntos, e overdubs ficam no lugar. Verificado nos testes: período do loop = 65 536 / fc (1,024 s a 64k; 4,096 s a 16k).

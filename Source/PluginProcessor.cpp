@@ -57,6 +57,12 @@ void MoodAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     scratchR.assign ((size_t) juce::jmax (512, samplesPerBlock), 0.f);
     engine.prepare (sampleRate);
+    recordingSampleRate = sampleRate;
+    recordingChannels = getTotalNumOutputChannels() > 1 ? 2 : 1;
+    recordingCapacity = juce::jmax (1, (int) std::min (sampleRate * 180.0, 180.0 * 96000.0));
+    recordingData.assign ((size_t) recordingCapacity * 2u, 0);
+    recordedSamples.store (0);
+    recording.store (false);
     lastOutGain = juce::Decibels::decibelsToGain (raw.outLevel->load());
     lastInGain = juce::Decibels::decibelsToGain (raw.inLevel->load());
 }
@@ -128,6 +134,97 @@ void MoodAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     for (int ch = 0; ch < juce::jmin (2, buffer.getNumChannels()); ++ch)
         buffer.applyGainRamp (ch, 0, n, lastOutGain, g);
     lastOutGain = g;
+
+    // A captura ocorre depois do processamento e do OUTPUT, portanto salva exatamente
+    // o que sai do plugin. O buffer foi pré-alocado em prepareToPlay: sem alocação no áudio.
+    if (recording.load (std::memory_order_relaxed))
+    {
+        int pos = recordedSamples.load (std::memory_order_relaxed);
+        const int take = juce::jmin (n, recordingCapacity - pos);
+        if (take > 0)
+        {
+            const float* outL = buffer.getReadPointer (0);
+            const float* outR = buffer.getNumChannels() > 1 ? buffer.getReadPointer (1) : outL;
+            for (int i = 0; i < take; ++i)
+            {
+                const auto qL = (int16_t) juce::jlimit (-32768, 32767, (int) std::lrint (juce::jlimit (-1.0f, 1.0f, outL[i]) * 32767.0f));
+                const auto qR = (int16_t) juce::jlimit (-32768, 32767, (int) std::lrint (juce::jlimit (-1.0f, 1.0f, outR[i]) * 32767.0f));
+                recordingData[(size_t) (pos + i) * 2u] = qL;
+                recordingData[(size_t) (pos + i) * 2u + 1u] = qR;
+            }
+            recordedSamples.store (pos + take, std::memory_order_release);
+        }
+        if (pos + take >= recordingCapacity)
+            recording.store (false, std::memory_order_release);
+    }
+}
+
+bool MoodAudioProcessor::startRecording()
+{
+    if (recordingData.empty() || recordingCapacity <= 0) return false;
+    recordedSamples.store (0, std::memory_order_release);
+    recording.store (true, std::memory_order_release);
+    return true;
+}
+
+void MoodAudioProcessor::stopRecording()
+{
+    recording.store (false, std::memory_order_release);
+}
+
+bool MoodAudioProcessor::saveRecording (const juce::File& destination, bool asMp3, juce::String& error)
+{
+    stopRecording();
+    const int samples = juce::jlimit (0, recordingCapacity, recordedSamples.load (std::memory_order_acquire));
+    if (samples <= 0) { error = "Nenhum áudio gravado."; return false; }
+    if (destination.existsAsFile() && ! destination.deleteFile())
+    { error = "Não foi possível substituir o arquivo de destino."; return false; }
+
+    const auto wavFile = asMp3
+        ? juce::File::getSpecialLocation (juce::File::tempDirectory).getNonexistentChildFile ("mood_recording", ".wav", false)
+        : destination;
+    juce::WavAudioFormat wav;
+    auto stream = wavFile.createOutputStream();
+    if (stream == nullptr) { error = "Não foi possível criar o arquivo."; return false; }
+    std::unique_ptr<juce::AudioFormatWriter> writer (wav.createWriterFor (stream.release(), recordingSampleRate,
+                                                                           (unsigned int) recordingChannels, 16, {}, 0));
+    if (! writer) { error = "Falha ao iniciar o gravador WAV."; return false; }
+
+    constexpr int chunkSize = 2048;
+    std::vector<float> left ((size_t) chunkSize), right ((size_t) chunkSize);
+    float* channels[2] = { left.data(), right.data() };
+    int offset = 0;
+    while (offset < samples)
+    {
+        const int count = juce::jmin (chunkSize, samples - offset);
+        for (int i = 0; i < count; ++i)
+        {
+            const size_t at = (size_t) (offset + i) * 2u;
+            left[(size_t) i] = (float) recordingData[at] / 32768.0f;
+            right[(size_t) i] = (float) recordingData[at + 1u] / 32768.0f;
+        }
+        if (! writer->write (channels, count)) { writer.reset(); wavFile.deleteFile(); error = "Erro ao gravar o WAV."; return false; }
+        offset += count;
+    }
+    writer.reset();
+
+    if (! asMp3) return true;
+
+    // MP3 usa o encoder LAME instalado no sistema (128 kbit/s: qualidade média e arquivo leve).
+    juce::ChildProcess encoder;
+    const auto command = "lame -b 128 --silent " + wavFile.getFullPathName().quoted()
+                       + " " + destination.getFullPathName().quoted();
+    const bool started = encoder.start (command);
+    const bool finished = started && encoder.waitForProcessToFinish (30000);
+    const int exitCode = finished ? encoder.getExitCode() : -1;
+    wavFile.deleteFile();
+    if (! finished || exitCode != 0 || ! destination.existsAsFile())
+    {
+        destination.deleteFile();
+        error = "Encoder MP3 não encontrado ou falhou. Instale o LAME e deixe 'lame' disponível no PATH. O WAV temporário foi removido.";
+        return false;
+    }
+    return true;
 }
 
 juce::AudioProcessorEditor* MoodAudioProcessor::createEditor() { return new MoodAudioProcessorEditor (*this); }
