@@ -183,15 +183,14 @@ public:
 
             routingNow = p.routing; directLoop = p.directLoop; gWet = gW * duck; gLoop = gL * duck;
 
-            // ---- DEGRADE: anti-alias de entrada + reconstrução de saída (passa-baixas 4ª ordem em kk * clock) ----
-            // 0 = limpo, sem bitcrusher (motor roda a taxa plena do host)
-            // >0 = bitcrusher: clock limitado a 2k..8k, degrade controla aliasing (1 = bruto, sem filtro)
+            // ---- DEGRADE: anti-alias de entrada + reconstrução de saída ----
+            // DEGRADE=0 mantém o clock selecionado, mas usa filtragem de maior qualidade.
+            // À medida que DEGRADE aumenta, o filtro abre até ficar praticamente bruto em 1.
             const float dg = clampf (smDeg, 0.f, 1.f);
             const bool degradeActive = dg > 0.001f;
-            // Quando degrade está ativo, limita o clock efetivo de 2k a 8k para ação do bitcrusher
-            const float fcDeg = degradeActive ? clampf (fc, 2000.f, 8000.f) : fc;
-            const float cutHz = degradeActive ? (0.40f * std::exp2 (5.f * dg * dg) * fcDeg) : (0.45f * fs);
-            const bool useAa = degradeActive && fcDeg < fs && cutHz < 0.45f * fs;
+            const float fcDeg = (fc < fs) ? clampf (fc, 2000.f, 8000.f) : fc;
+            const float cutHz = 0.40f * std::exp2 (5.f * dg * dg) * fcDeg;
+            const bool useAa = fcDeg < fs && cutHz < 0.45f * fs;
             aaMix += aGain * ((useAa ? 1.f : 0.f) - aaMix);
             aaIn[0].setCutoff (cutHz, fs); aaIn[1].setCutoff (cutHz, fs);
             const float fL = aaIn[0].process (dryL), fR = aaIn[1].process (dryR);
