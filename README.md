@@ -125,3 +125,14 @@ Ruído que cresce com a queda do CLOCK · loop que se degrada a cada passada (fi
 ## Gravador de saída
 
 Os botões REC, STOP, SALVAR WAV e SALVAR MP3 ficam na faixa dedicada logo abaixo dos seletores REVERB/ROUTING/LOOP MODE, dentro da área principal do pedal. O gravador captura a saída estéreo processada do plugin por até 180 segundos. WAV é PCM 16-bit; MP3 usa 128 kbps e requer o executável LAME disponível no PATH do sistema.
+
+
+## Atualização: gravador e limiter
+
+- O gravador de saída não possui mais um limite fixo de 180 segundos; a memória é ampliada conforme a gravação cresce e o limite prático passa a ser a memória disponível.
+- WAV permanece em PCM estéreo 16-bit; MP3 permanece em 128 kbit/s (encoder LAME conforme configuração existente).
+- Os botões REC/STOP/SALVAR WAV/SALVAR MP3 foram movidos para a faixa inferior, abaixo do corpo principal do pedal, sem cobrir os footswitches.
+- Os valores numéricos exibidos nos knobs e sliders mostram duas casas decimais; a resolução interna dos parâmetros não foi alterada.
+- Foi adicionado um limiter estéreo após o controle OUTPUT, com threshold ajustável de -12 dB a 0 dB (padrão -1 dB), ataque imediato e release suave de 60 ms.
+
+Nota técnica: o buffer de gravação cresce sob demanda. Como esta versão mantém o armazenamento em memória para permitir exportação posterior, a duração prática depende da RAM disponível; o redimensionamento pode causar uma pequena carga pontual no thread de áudio.

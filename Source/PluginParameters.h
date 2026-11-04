@@ -62,6 +62,7 @@ namespace ids
     inline constexpr const char* inLevel = "in_level";
     inline constexpr const char* clockNoise = "clock_noise";
     inline constexpr const char* wetLowCut = "wet_lowcut";
+    inline constexpr const char* limiterThreshold = "limiter_threshold";
     // gestos de footswitch e ações (momentâneos): mapeáveis em qualquer controlador / MIDI
     inline constexpr const char* fsWet = "fs_wet";
     inline constexpr const char* fsLoop = "fs_loop";
@@ -190,5 +191,7 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
     addB (ids::actNextPreset, "Action: Next Preset",          false);
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { ids::outLevel, 1 }, "Output Level (dB)",
                                                        NormalisableRange<float> (-24.f, 12.f, 0.1f), 0.f));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { ids::limiterThreshold, 1 }, "Limiter Threshold (dB)",
+                                                       NormalisableRange<float> (-12.f, 0.f, 0.1f), -1.f));
     return layout;
 }

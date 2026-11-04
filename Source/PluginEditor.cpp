@@ -29,7 +29,8 @@ MoodAudioProcessorEditor::MoodAudioProcessorEditor (MoodAudioProcessor& p)
       sRampAtt (p.apvts, ids::rmpAtten, "RAMP ATTEN", 62),
       sIn (p.apvts, ids::inLevel, "INPUT dB", 62), sOut (p.apvts, ids::outLevel, "OUTPUT dB", 62),
       sLowCut (p.apvts, ids::wetLowCut, "WET LOW CUT", 62),
-      sDegrade (p.apvts, ids::clockDegrade, "DEGRADE", 62), sNoise (p.apvts, ids::clockNoise, "NOISE", 62)
+      sDegrade (p.apvts, ids::clockDegrade, "DEGRADE", 72), sNoise (p.apvts, ids::clockNoise, "NOISE", 72),
+      sLimiter (p.apvts, ids::limiterThreshold, "LIMITER dB", 72)
 {
     setSize (kW, kH);
 
@@ -37,7 +38,7 @@ MoodAudioProcessorEditor::MoodAudioProcessorEditor (MoodAudioProcessor& p)
         addAndMakeVisible (k);
     for (auto* s : { &swWet, &swRoute, &swLoop, &swPreset, &hSync, &hSpreadSolo, &hLoopLen, &swCtrl })
         addAndMakeVisible (s);
-    for (auto* s : { &sExp, &sRamp, &sRampAtt, &sIn, &sOut, &sLowCut, &sDegrade, &sNoise })
+    for (auto* s : { &sExp, &sRamp, &sRampAtt, &sIn, &sOut, &sLowCut, &sDegrade, &sNoise, &sLimiter })
         addAndMakeVisible (s);
 
     // ---- dip switches ----
@@ -69,8 +70,10 @@ MoodAudioProcessorEditor::MoodAudioProcessorEditor (MoodAudioProcessor& p)
     stopRecBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff55515d));
     wavExportBtn.setColour (juce::TextButton::buttonColourId, kPlum);
     mp3ExportBtn.setColour (juce::TextButton::buttonColourId, kPlum);
-    recordBtn.setTooltip ("Grava a saída processada do plugin (máximo de 180 segundos).");
+    recordBtn.setTooltip ("Grava a saída processada até pressionar STOP; duração limitada pela memória disponível.");
     wavExportBtn.setTooltip ("Exporta WAV PCM 16-bit.");
+    sLimiter.slider.setTooltip ("Limiter de saída: define o teto de pico entre -12 dB e 0 dB.");
+    reg (&sLimiter, ids::limiterThreshold);
     mp3ExportBtn.setTooltip ("Exporta MP3 128 kbit/s; requer LAME instalado no PATH.");
     recordBtn.onClick = [this]
     {
@@ -402,7 +405,8 @@ void MoodAudioProcessorEditor::resized()
     sLowCut.setBounds (365, 204, 205, 22);
     sDegrade.setBounds (580, 152, 200, 22);
     sNoise.setBounds (580, 178, 200, 22);
-    resetHiddenBtn.setBounds (640, 196 + kDy, 130, 26);
+    sLimiter.setBounds (580, 204, 200, 22);
+    resetHiddenBtn.setBounds (24, 218, 130, 20);
 
     // corpo do pedal
     const int cxL = 170, cxC = 400, cxR = 630;
@@ -426,11 +430,11 @@ void MoodAudioProcessorEditor::resized()
     saveL.setBounds (335, 828 + kDy, 62, 24);
     saveR.setBounds (405, 828 + kDy, 62, 24);
 
-    // Gravador independente do looper interno: captura a saída estéreo processada.
-    recordBtn.setBounds (145, 738, 82, 28);
-    stopRecBtn.setBounds (235, 738, 76, 28);
-    wavExportBtn.setBounds (325, 738, 130, 28);
-    mp3ExportBtn.setBounds (465, 738, 130, 28);
+    // Gravador fica no rodapé externo ao corpo do pedal, sem cobrir controles/footswitches.
+    recordBtn.setBounds (145, 974, 82, 28);
+    stopRecBtn.setBounds (235, 974, 76, 28);
+    wavExportBtn.setBounds (325, 974, 130, 28);
+    mp3ExportBtn.setBounds (465, 974, 130, 28);
 }
 
 void MoodAudioProcessorEditor::drawLed (juce::Graphics& g, float cx, float cy, juce::Colour c, bool on) const
@@ -450,10 +454,10 @@ void MoodAudioProcessorEditor::paint (juce::Graphics& g)
 {
     g.fillAll (kCream);
     g.setColour (juce::Colour (0xffeaddea));
-    g.fillRoundedRectangle (118.f, 716.f, 564.f, 58.f, 8.f);
+    g.fillRoundedRectangle (118.f, 958.f, 564.f, 54.f, 8.f);
     g.setColour (kInk);
     g.setFont (10.f);
-    g.drawText ("GRAVADOR DE SAÍDA  •  WAV 16-bit / MP3 128 kbps", 118, 720, 564, 14, juce::Justification::centred);
+    g.drawText ("GRAVADOR DE SAÍDA  •  WAV 16-bit / MP3 128 kbps", 118, 958, 564, 14, juce::Justification::centred);
 
     // ---- cabecalho ----
     g.setColour (kInk);

@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include <cmath>
 
 MoodAudioProcessor::MoodAudioProcessor()
     : AudioProcessor (BusesProperties().withInput ("Input", juce::AudioChannelSet::stereo(), true)
@@ -21,7 +22,7 @@ MoodAudioProcessor::MoodAudioProcessor()
     raw.hStereoWidth = r (ids::hStereoWidth); raw.hDirectLoop = r (ids::hDirectLoop); raw.hTone = r (ids::hTone);
     raw.hFade = r (ids::hFade); raw.hBalance = r (ids::hBalance); raw.hRampWave = r (ids::hRampWave); raw.hSync = r (ids::hSync);
     raw.hSpreadSolo = r (ids::hSpreadSolo); raw.hLoopLen = r (ids::hLoopLen); raw.hTrueBypass = r (ids::hTrueBypass);
-    raw.outLevel = r (ids::outLevel); raw.inLevel = r (ids::inLevel);
+    raw.outLevel = r (ids::outLevel); raw.inLevel = r (ids::inLevel); raw.limiterThreshold = r (ids::limiterThreshold);
     raw.clockDegrade = r (ids::clockDegrade); raw.clockNoise = r (ids::clockNoise); raw.wetLowCut = r (ids::wetLowCut);
     raw.fsWet = r (ids::fsWet); raw.fsLoop = r (ids::fsLoop);
     raw.actSaveLeft = r (ids::actSaveLeft); raw.actSaveRight = r (ids::actSaveRight);
@@ -59,8 +60,11 @@ void MoodAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     engine.prepare (sampleRate);
     recordingSampleRate = sampleRate;
     recordingChannels = getTotalNumOutputChannels() > 1 ? 2 : 1;
-    recordingCapacity = juce::jmax (1, (int) std::min (sampleRate * 180.0, 180.0 * 96000.0));
-    recordingData.assign ((size_t) recordingCapacity * 2u, 0);
+    recordingCapacity = juce::jmax (1, (int) (sampleRate * 10.0)); // cresce sob demanda durante a gravação
+    recordingData.clear();
+    recordingData.reserve ((size_t) recordingCapacity * 2u);
+    recordingData.resize ((size_t) recordingCapacity * 2u, 0);
+    limiterGain = 1.0f;
     recordedSamples.store (0);
     recording.store (false);
     lastOutGain = juce::Decibels::decibelsToGain (raw.outLevel->load());
@@ -135,27 +139,43 @@ void MoodAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         buffer.applyGainRamp (ch, 0, n, lastOutGain, g);
     lastOutGain = g;
 
-    // A captura ocorre depois do processamento e do OUTPUT, portanto salva exatamente
-    // o que sai do plugin. O buffer foi pré-alocado em prepareToPlay: sem alocação no áudio.
+    // Limiter de saída com ataque imediato e release suave, linkado em estéreo.
+    const float ceiling = juce::Decibels::decibelsToGain (raw.limiterThreshold->load());
+    const float release = std::exp (-1.0f / (0.060f * (float) getSampleRate()));
+    float* outL = buffer.getWritePointer (0);
+    float* outR = buffer.getNumChannels() > 1 ? buffer.getWritePointer (1) : nullptr;
+    for (int i = 0; i < n; ++i)
+    {
+        const float peak = juce::jmax (std::abs (outL[i]), outR != nullptr ? std::abs (outR[i]) : 0.0f);
+        const float wanted = peak > ceiling ? ceiling / peak : 1.0f;
+        if (wanted < limiterGain) limiterGain = wanted;
+        else limiterGain = release * limiterGain + (1.0f - release) * wanted;
+        outL[i] *= limiterGain;
+        if (outR != nullptr) outR[i] *= limiterGain;
+    }
+
+    // Gravação sem duração fixa: o buffer cresce em blocos conforme necessário.
+    // O crescimento pode provocar uma pequena carga pontual no thread de áudio.
     if (recording.load (std::memory_order_relaxed))
     {
         int pos = recordedSamples.load (std::memory_order_relaxed);
-        const int take = juce::jmin (n, recordingCapacity - pos);
-        if (take > 0)
+        const int required = pos + n;
+        if (required > recordingCapacity)
         {
-            const float* outL = buffer.getReadPointer (0);
-            const float* outR = buffer.getNumChannels() > 1 ? buffer.getReadPointer (1) : outL;
-            for (int i = 0; i < take; ++i)
-            {
-                const auto qL = (int16_t) juce::jlimit (-32768, 32767, (int) std::lrint (juce::jlimit (-1.0f, 1.0f, outL[i]) * 32767.0f));
-                const auto qR = (int16_t) juce::jlimit (-32768, 32767, (int) std::lrint (juce::jlimit (-1.0f, 1.0f, outR[i]) * 32767.0f));
-                recordingData[(size_t) (pos + i) * 2u] = qL;
-                recordingData[(size_t) (pos + i) * 2u + 1u] = qR;
-            }
-            recordedSamples.store (pos + take, std::memory_order_release);
+            const int newCapacity = juce::jmax (required, recordingCapacity * 2);
+            recordingData.resize ((size_t) newCapacity * 2u, 0);
+            recordingCapacity = newCapacity;
         }
-        if (pos + take >= recordingCapacity)
-            recording.store (false, std::memory_order_release);
+        const float* capL = buffer.getReadPointer (0);
+        const float* capR = buffer.getNumChannels() > 1 ? buffer.getReadPointer (1) : capL;
+        for (int i = 0; i < n; ++i)
+        {
+            const auto qL = (int16_t) juce::jlimit (-32768, 32767, (int) std::lrint (juce::jlimit (-1.0f, 1.0f, capL[i]) * 32767.0f));
+            const auto qR = (int16_t) juce::jlimit (-32768, 32767, (int) std::lrint (juce::jlimit (-1.0f, 1.0f, capR[i]) * 32767.0f));
+            recordingData[(size_t) (pos + i) * 2u] = qL;
+            recordingData[(size_t) (pos + i) * 2u + 1u] = qR;
+        }
+        recordedSamples.store (required, std::memory_order_release);
     }
 }
 

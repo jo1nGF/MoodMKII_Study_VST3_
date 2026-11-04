@@ -55,6 +55,7 @@ public:
     {
         slider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
         slider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+        slider.setNumDecimalPlacesToDisplay (2);
         slider.setRotaryParameters (juce::MathConstants<float>::pi * 1.2f, juce::MathConstants<float>::pi * 2.8f, true);
         slider.setLookAndFeel (&laf);
         slider.onValueChange = [this] { repaint(); };
@@ -93,6 +94,7 @@ public:
     {
         slider.setSliderStyle (juce::Slider::LinearHorizontal);
         slider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 52, 18);
+        slider.setNumDecimalPlacesToDisplay (2);
         slider.setColour (juce::Slider::textBoxTextColourId, kInk);
         slider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
         slider.setColour (juce::Slider::trackColourId, kPlum);
@@ -312,7 +314,7 @@ private:
     ui::ChoiceSwitch hSync, hSpreadSolo, hLoopLen;
     ui::ChoiceSwitch swCtrl;
     // sliders compactos
-    ui::LabeledSlider sExp, sRamp, sRampAtt, sIn, sOut, sLowCut, sDegrade, sNoise;
+    ui::LabeledSlider sExp, sRamp, sRampAtt, sIn, sOut, sLowCut, sDegrade, sNoise, sLimiter;
     // dip switches
     ui::DipSwitch dipCfg[8], dipRamp[8];
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> dipAtt[16];

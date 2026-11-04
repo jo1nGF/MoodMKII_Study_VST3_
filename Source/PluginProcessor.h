@@ -69,7 +69,7 @@ public:
     void resetParamToDefault (const juce::String& paramId);
     void setBoolParam (const char* id, bool v);
 
-    // Gravador da saída processada: PCM 16-bit, até 180 segundos.
+    // Gravador da saída processada: PCM 16-bit, duração limitada apenas pela memória disponível.
     bool startRecording();
     void stopRecording();
     bool isRecording() const { return recording.load(); }
@@ -120,13 +120,13 @@ private:
         std::atomic<float> *rmpTime, *rmpWetModify, *rmpClock, *rmpLoopModify, *rmpLength, *rmpBounce, *rmpSweepTop, *rmpRise, *rmpSpeed, *rmpAtten;
         std::atomic<float> *ctrlSource, *expCv;
         std::atomic<float> *hStereoWidth, *hDirectLoop, *hTone, *hFade, *hBalance, *hRampWave, *hSync, *hSpreadSolo, *hLoopLen, *hTrueBypass;
-        std::atomic<float> *outLevel, *inLevel, *clockDegrade, *clockNoise, *wetLowCut;
+        std::atomic<float> *outLevel, *inLevel, *clockDegrade, *clockNoise, *wetLowCut, *limiterThreshold;
         std::atomic<float> *fsWet, *fsLoop, *actSaveLeft, *actSaveRight, *actPrevPreset, *actNextPreset;
     } raw {};
 
     mood::MoodEngine engine;
     std::vector<float> scratchR;
-    float lastOutGain = 1.f, lastInGain = 1.f;
+    float lastOutGain = 1.f, lastInGain = 1.f, limiterGain = 1.f;
 
     // Buffer intercalado int16 para manter o consumo de memória baixo.
     std::vector<int16_t> recordingData;
